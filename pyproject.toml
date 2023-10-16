@@ -10,6 +10,8 @@ python-multipart = "*"
 fastapi = "*"
 uvicorn = "*"
 pydantic = "*"
+langchain  = "*"
+openai = "*"
 
 [tool.poetry.dev-dependencies]
 pytest = "*"
