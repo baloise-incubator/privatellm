@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y \
     python3 python3-dev python3-poetry python3-venv build-essential
 RUN ln -s /usr/bin/python3 /usr/bin/python
 
-COPY pyproject.toml poetry.lock ./
+COPY pyproject.toml poetry.lock poetry.toml ./
 RUN poetry install
 COPY privatellm privatellm
 
