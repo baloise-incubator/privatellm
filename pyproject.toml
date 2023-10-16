@@ -6,6 +6,7 @@ authors = []
 
 [tool.poetry.dependencies]
 python = "^3.10"
+python-multipart = "*"
 fastapi = "*"
 uvicorn = "*"
 pydantic = "*"
