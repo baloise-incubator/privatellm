@@ -10,9 +10,9 @@ ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 FROM base as installer
 RUN apt-get update && apt-get install -y \
     python3 python3-dev python3-poetry python3-venv build-essential
+RUN ln -s /usr/bin/python3 /usr/bin/python
 
 COPY pyproject.toml poetry.lock ./
-RUN which python
 RUN poetry install
 COPY privatellm privatellm
 
