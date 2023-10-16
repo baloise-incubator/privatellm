@@ -71,13 +71,19 @@ async def chat_trial(
     prompt = PromptTemplate(template=template, input_variables=["question"])
     callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
     llm = LlamaCpp(
-        model_path="/Users/rlm/Desktop/Code/llama.cpp/models/openorca-platypus2-13b.gguf.q4_0.bin",
+        # model downloaded from meta and
+        # converted with https://github.com/ggerganov/llama.cpp/blob/master/convert.py
+        model_path="llama-2-7b-chat/ggml-model-f16.gguf",
         temperature=0.75,
         max_tokens=2000,
         top_p=1,
         callback_manager=callback_manager, 
         verbose=True, # Verbose is required to pass to the callback manager
     )
+    llm_chain = LLMChain(prompt=prompt, llm=llm)
+
+    resp = await llm_chain.arun(input)
+    return resp
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, workers=2)
