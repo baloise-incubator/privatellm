@@ -4,7 +4,7 @@ from typing import List
 import uvicorn
 from langchain.agents.agent_toolkits.openapi import planner
 import os
-from langchain.chat_models import ChatOpenAI
+from langchain.llms import LlamaCpp
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
 from langchain.callbacks.manager import CallbackManager
@@ -64,30 +64,20 @@ async def chat_trial(
     input: str,
     username: str = Depends(authenticate_user)
 ):
-    api_key = assert_api_key()
     template = """Question: {question}
 
     Answer: Let's work this out in a step by step way to be sure we have the right answer."""
 
     prompt = PromptTemplate(template=template, input_variables=["question"])
-
-    # Callbacks support token-wise streaming
     callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
-
-    llm = ChatOpenAI(openai_api_key=api_key,
-        model_name="gpt-3.5-turbo", 
+    llm = LlamaCpp(
+        model_path="/Users/rlm/Desktop/Code/llama.cpp/models/openorca-platypus2-13b.gguf.q4_0.bin",
         temperature=0.75,
         max_tokens=2000,
         top_p=1,
         callback_manager=callback_manager, 
         verbose=True, # Verbose is required to pass to the callback manager
     )
-
-    llm_chain = LLMChain(prompt=prompt, llm=llm)
-    question = "What NFL team won the Super Bowl in the year Justin Bieber was born?"
-    
-    llm_chain.run(question)
-
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, workers=2)

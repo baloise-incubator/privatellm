@@ -12,6 +12,7 @@ uvicorn = "*"
 pydantic = "*"
 langchain  = "*"
 openai = "*"
+llama-cpp-python = "^0.2.11"
 
 [tool.poetry.dev-dependencies]
 pytest = "*"
