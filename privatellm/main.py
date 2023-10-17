@@ -183,7 +183,8 @@ async def query_db(question: str, username: str):
 @app.post("/chat_with_documents/")
 async def chat_with_documents(input: str, username: str = Depends(authenticate_user)):
     template = """Please give a short answer using the context enclosed in <ctx></ctx>.
-    
+    If the context does not contain the information respond with "texttitan does not want to help".
+
     <ctx>
     {summaries}
     </ctx>
@@ -193,7 +194,7 @@ async def chat_with_documents(input: str, username: str = Depends(authenticate_u
     answer:"""
 
     docs = await query_db(input, username)
-
+    print(docs)
     prompt = PromptTemplate(
         template=template, input_variables=["question", "summaries"]
     )
