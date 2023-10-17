@@ -12,8 +12,9 @@ uvicorn = "*"
 pydantic = "*"
 langchain  = "*"
 openai = "*"
-llama-cpp-python = "*"
 chromadb = "*"
+llama-cpp-python = "^0.2.11"
+gpt4all = "^1.0.12"
 
 [tool.poetry.dev-dependencies]
 pytest = "*"

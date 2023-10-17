@@ -5,7 +5,7 @@ import uvicorn
 from langchain.agents.agent_toolkits.openapi import planner
 import os
 import glob
-from langchain.llms import LlamaCpp
+from langchain.llms import LlamaCpp, GPT4All
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
 from langchain.callbacks.manager import CallbackManager
@@ -16,6 +16,7 @@ from langchain.vectorstores import Chroma
 from langchain.document_loaders import TextLoader
 from langchain.embeddings.llamacpp import LlamaCppEmbeddings
 import logging
+from enum import Enum
 
 os.environ["ANONYMIZED_TELEMETRY"] = "False"
 
@@ -25,6 +26,11 @@ logging.basicConfig(
     format='%(asctime)s [%(levelname)s] %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
+
+
+class ModelEnum(Enum):
+    LLAMA = 'llama'
+    GPT4ALL = 'gpt4all'
 
 
 app = FastAPI()
@@ -80,28 +86,42 @@ async def upload_pdfs(
 
 async def chat(
     input: str,
+    model_enum: ModelEnum = ModelEnum.LLAMA,
     username: str = Depends(authenticate_user)
 ):
     template = """Question: {question}
 
-    Answer: give a short answer."""
+    Answer: Give a short answer."""
 
     prompt = PromptTemplate(template=template, input_variables=["question"])
     callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
-    llm = LlamaCpp(
-        # model downloaded from meta and
-        # converted with https://github.com/ggerganov/llama.cpp/blob/master/convert.py
-        model_path="llama-2-7b-chat/ggml-model-f16.gguf",
-        temperature=0.75,
-        max_tokens=2000,
-        top_p=1,
-        callback_manager=callback_manager, 
-        verbose=False, # Verbose is required to pass to the callback manager
-    )
+
+    match model_enum:
+        case ModelEnum.LLAMA:
+            llm = LlamaCpp(
+                # model downloaded from meta and
+                # converted with https://github.com/ggerganov/llama.cpp/blob/master/convert.py
+                model_path="llama-2-7b-chat/ggml-model-f16.gguf",
+                temperature=0.75,
+                max_tokens=2000,
+                top_p=1,
+                callback_manager=callback_manager,
+                verbose=True, # Verbose is required to pass to the callback manager
+            )
+        case ModelEnum.GPT4ALL:
+            template = """"Question: {question}
+
+                Answer: Let's think step by step."""
+
+            prompt = PromptTemplate(template=template, input_variables=["question"])
+            llm = GPT4All(model="gpt4all/model.bin", backend="gptj", callback_manager=callback_manager,
+                          verbose=True)
+        case _:
+            raise ValueError(f'unsupported model {model_enum}')
     llm_chain = LLMChain(prompt=prompt, llm=llm)
 
     resp = await llm_chain.arun(input)
-    return resp
+    return resp.strip()
 
 async def populate_db(db):
     collection = db.get()
