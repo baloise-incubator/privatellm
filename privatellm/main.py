@@ -176,7 +176,7 @@ async def load_db(username: str):
 
 async def query_db(question: str, username: str):
     db = await load_db(username)
-    docs = db.similarity_search(question, filter={"username": username})
+    docs = db.similarity_search(question)
     return docs
 
 
