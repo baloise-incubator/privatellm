@@ -19,9 +19,14 @@ gpt4all = "^1.0.12"
 [tool.poetry.dev-dependencies]
 pytest = "*"
 
+[tool.poetry.group.dev.dependencies]
+black = "^23.9.1"
+mypy = "^1.6.0"
+
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
 start = "uvicorn app:app --host 0.0.0.0 --port 8000 --reload"
+format = "black:main"
