@@ -41,7 +41,7 @@ app = FastAPI()
 security = HTTPBasic()
 
 # Users (for demonstration purposes, replace with your own authentication logic)
-fake_users_db = {"rr": "rr", "tt": "tt"}
+fake_users_db = {"rrr": "rrr", "ttt": "ttt", "yyy": "yyy"}
 
 
 def assert_api_key():
@@ -143,18 +143,16 @@ async def chat(
     return resp.strip()
 
 
-async def populate_db(db):
+async def populate_db(db, username):
     collection = db.get()
     existing_docs = set([metadata["source"] for metadata in collection["metadatas"]])
     logging.info(f"existing documents {existing_docs}")
-    for fn in glob.glob("data/**/*.txt"):
+    for fn in glob.glob(f"data/{username}/*.txt"):
         fake_user = fn.split("/")[1]
         if fn in existing_docs:
             continue
         loader = TextLoader(fn)
         documents = loader.load()
-        for doc in documents:
-            doc.metadata["username"] = fake_user
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000, chunk_overlap=200
         )
@@ -165,19 +163,19 @@ async def populate_db(db):
         db.persist()
 
 
-async def load_db():
+async def load_db(username: str):
     # Use Llama model for embedding
     start = timer()
     assert_api_key()
     embeddings = OpenAIEmbeddings()
-    db = Chroma(persist_directory="./db", embedding_function=embeddings)
-    await populate_db(db)
+    db = Chroma(persist_directory="./db", embedding_function=embeddings, collection_name=username)
+    await populate_db(db, username)
     print(f'ingestion took {timer() - start}')
     return db
 
 
 async def query_db(question: str, username: str):
-    db = await load_db()
+    db = await load_db(username)
     docs = db.similarity_search(question, filter={"username": username})
     return docs
 
