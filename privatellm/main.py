@@ -5,6 +5,7 @@ import uvicorn
 from langchain.agents.agent_toolkits.openapi import planner
 import os
 from langchain.llms import LlamaCpp, GPT4All
+from langchain.chat_models import ChatOpenAI
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
 from langchain.callbacks.manager import CallbackManager
@@ -13,7 +14,8 @@ from enum import Enum
 
 class ModelEnum(Enum):
     LLAMA = 'llama'
-    GPT4ALL = 'gpt4all' 
+    GPT4ALL = 'gpt4all'
+    CHATGPT = 'chatgpt'
 
 
 app = FastAPI()
@@ -98,6 +100,17 @@ async def chat_trial(
             prompt = PromptTemplate(template=template, input_variables=["question"])
             llm = GPT4All(model="gpt4all/model.bin", backend="gptj", callback_manager=callback_manager,
                           verbose=True)
+        case ModelEnum.CHATGPT:
+            api_key = assert_api_key()
+
+            llm = ChatOpenAI(openai_api_key=api_key,
+                model_name="gpt-3.5-turbo",
+                temperature=0.75,
+                max_tokens=2000,
+                top_p=1,
+                callback_manager=callback_manager,
+                verbose=True, # Verbose is required to pass to the callback manager
+            )
         case _:
             raise ValueError(f'unsupported model {model_enum}')
     llm_chain = LLMChain(prompt=prompt, llm=llm)
