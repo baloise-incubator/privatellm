@@ -4,11 +4,28 @@ from typing import List
 import uvicorn
 from langchain.agents.agent_toolkits.openapi import planner
 import os
+import glob
 from langchain.llms import LlamaCpp
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
 from langchain.callbacks.manager import CallbackManager
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.text_splitter import CharacterTextSplitter
+from langchain.vectorstores import Chroma
+from langchain.document_loaders import TextLoader
+from langchain.embeddings.llamacpp import LlamaCppEmbeddings
+import logging
+
+os.environ["ANONYMIZED_TELEMETRY"] = "False"
+
+# Configure the logging module
+logging.basicConfig(
+    level=logging.DEBUG,   # Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
 
 app = FastAPI()
 
@@ -60,13 +77,14 @@ async def upload_pdfs(
     return {"uploaded_filenames": filenames}
 
 @app.post("/chat/")
-async def chat_trial(
+
+async def chat(
     input: str,
     username: str = Depends(authenticate_user)
 ):
     template = """Question: {question}
 
-    Answer: Let's work this out in a step by step way to be sure we have the right answer."""
+    Answer: give a short answer."""
 
     prompt = PromptTemplate(template=template, input_variables=["question"])
     callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
@@ -78,12 +96,78 @@ async def chat_trial(
         max_tokens=2000,
         top_p=1,
         callback_manager=callback_manager, 
-        verbose=True, # Verbose is required to pass to the callback manager
+        verbose=False, # Verbose is required to pass to the callback manager
     )
     llm_chain = LLMChain(prompt=prompt, llm=llm)
 
     resp = await llm_chain.arun(input)
     return resp
 
+async def populate_db(db):
+    collection = db.get()
+    existing_docs = set([metadata['source'] for metadata in collection['metadatas']])
+    logging.info(f"existing documents {existing_docs}")
+    for fn in glob.glob("data/**/*.txt"):
+        if fn in existing_docs:
+            continue
+        loader = TextLoader(fn)
+        documents = loader.load()
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+        docs = text_splitter.split_documents(documents)
+        logging.info(f"generate embeddings for {fn}")
+        await db.aadd_documents(docs)
+        logging.info("persisting")
+        db.persist()
+
+
+async def load_db():
+    # Use Llama model for embedding
+    embeddings = LlamaCppEmbeddings(model_path="llama-2-7b-chat/ggml-model-f16.gguf", n_ctx=2048, verbose=False)
+    db = Chroma(persist_directory="./db", embedding_function=embeddings)
+    await populate_db(db)
+    return db
+
+
+async def query_db(question: str):
+    db = await load_db()
+    docs = db.similarity_search(question)
+    return docs
+
+
+@app.post("/chat_with_documents/")
+async def chat_with_documents(
+    input: str,
+    username: str = Depends(authenticate_user)
+):
+    template = """Please give a short answer using the context enclosed in <ctx></ctx>.
+    
+    <ctx>
+    {summaries}
+    </ctx>
+
+    question: {question}
+
+    answer:"""
+
+    docs = await query_db(input)
+
+    prompt = PromptTemplate(template=template, input_variables=["question", "summaries"])
+    callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
+    llm = LlamaCpp(
+        # model downloaded from meta and
+        # converted with https://github.com/ggerganov/llama.cpp/blob/master/convert.py
+        model_path="llama-2-7b-chat/ggml-model-f16.gguf",
+        temperature=0.75,
+        n_ctx = 1024,
+        max_tokens=2000,
+        top_p=1,
+        callback_manager=callback_manager, 
+        verbose=True, # Verbose is required to pass to the callback manager
+    )
+    llm_chain = LLMChain(prompt=prompt, llm=llm)
+
+    resp = await llm_chain.arun({"question": input, "summaries": docs})
+    return resp
+    
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, workers=2)
