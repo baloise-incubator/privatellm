@@ -41,7 +41,7 @@ app = FastAPI()
 security = HTTPBasic()
 
 # Users (for demonstration purposes, replace with your own authentication logic)
-fake_users_db = {"rr": "rr"}
+fake_users_db = {"rr": "rr", "tt": "tt"}
 
 
 def assert_api_key():
@@ -148,10 +148,13 @@ async def populate_db(db):
     existing_docs = set([metadata["source"] for metadata in collection["metadatas"]])
     logging.info(f"existing documents {existing_docs}")
     for fn in glob.glob("data/**/*.txt"):
+        fake_user = fn.split("/")[1]
         if fn in existing_docs:
             continue
         loader = TextLoader(fn)
         documents = loader.load()
+        for doc in documents:
+            doc.metadata["username"] = fake_user
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000, chunk_overlap=200
         )
@@ -172,9 +175,9 @@ async def load_db():
     return db
 
 
-async def query_db(question: str):
+async def query_db(question: str, username: str):
     db = await load_db()
-    docs = db.similarity_search(question)
+    docs = db.similarity_search(question, filter={"username": username})
     return docs
 
 
@@ -190,7 +193,7 @@ async def chat_with_documents(input: str, username: str = Depends(authenticate_u
 
     answer:"""
 
-    docs = await query_db(input)
+    docs = await query_db(input, username)
 
     prompt = PromptTemplate(
         template=template, input_variables=["question", "summaries"]
