@@ -843,6 +843,14 @@ optional = false
 python-versions = ">=3.6"
 
 [[package]]
+name = "regex"
+version = "2023.10.3"
+description = "Alternative regular expression module, to replace re."
+category = "main"
+optional = false
+python-versions = ">=3.7"
+
+[[package]]
 name = "requests"
 version = "2.31.0"
 description = "Python HTTP for Humans."
@@ -947,6 +955,21 @@ python-versions = ">=3.7"
 
 [package.extras]
 doc = ["reno", "sphinx", "tornado (>=4.5)"]
+
+[[package]]
+name = "tiktoken"
+version = "0.5.1"
+description = "tiktoken is a fast BPE tokeniser for use with OpenAI's models"
+category = "main"
+optional = false
+python-versions = ">=3.8"
+
+[package.dependencies]
+regex = ">=2022.1.18"
+requests = ">=2.26.0"
+
+[package.extras]
+blobfile = ["blobfile (>=2)"]
 
 [[package]]
 name = "tokenizers"
@@ -1110,7 +1133,7 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.10"
-content-hash = "a14bb3b7d7a57efc2567d5215c390a7428e71333ddb496cc4428591eca91171f"
+content-hash = "c9e81a98cecae3e9122a4d1bb82d3cd0009052950f1a4841fd6d115b2428d38d"
 
 [metadata.files]
 aiohttp = []
@@ -1178,6 +1201,7 @@ python-dateutil = []
 python-dotenv = []
 python-multipart = []
 pyyaml = []
+regex = []
 requests = []
 six = []
 sniffio = []
@@ -1185,6 +1209,7 @@ sqlalchemy = []
 starlette = []
 sympy = []
 tenacity = []
+tiktoken = []
 tokenizers = []
 tomli = []
 tqdm = []
