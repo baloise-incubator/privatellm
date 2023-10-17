@@ -12,12 +12,12 @@ from langchain.chains import LLMChain
 from langchain.callbacks.manager import CallbackManager
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.text_splitter import CharacterTextSplitter
 from langchain.vectorstores import Chroma
 from langchain.document_loaders import TextLoader
-from langchain.embeddings.llamacpp import LlamaCppEmbeddings
+from langchain.embeddings.openai import OpenAIEmbeddings
 import logging
 from enum import Enum
+from timeit import default_timer as timer
 
 os.environ["ANONYMIZED_TELEMETRY"] = "False"
 
@@ -167,11 +167,12 @@ async def populate_db(db):
 
 async def load_db():
     # Use Llama model for embedding
-    embeddings = LlamaCppEmbeddings(
-        model_path="llama-2-7b-chat/ggml-model-f16.gguf", n_ctx=2048, verbose=False
-    )
+    start = timer()
+    assert_api_key()
+    embeddings = OpenAIEmbeddings()
     db = Chroma(persist_directory="./db", embedding_function=embeddings)
     await populate_db(db)
+    print(f'ingestion took {timer() - start}')
     return db
 
 
@@ -199,12 +200,12 @@ async def chat_with_documents(input: str, username: str = Depends(authenticate_u
         template=template, input_variables=["question", "summaries"]
     )
     callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
-    llm = LlamaCpp(
-        # model downloaded from meta and
-        # converted with https://github.com/ggerganov/llama.cpp/blob/master/convert.py
-        model_path="llama-2-7b-chat/ggml-model-f16.gguf",
+    api_key = assert_api_key()
+
+    llm = ChatOpenAI(
+        openai_api_key=api_key,
+        model_name="gpt-3.5-turbo",
         temperature=0.75,
-        n_ctx=1024,
         max_tokens=2000,
         top_p=1,
         callback_manager=callback_manager,
@@ -212,7 +213,9 @@ async def chat_with_documents(input: str, username: str = Depends(authenticate_u
     )
     llm_chain = LLMChain(prompt=prompt, llm=llm)
 
+    start = timer()
     resp = await llm_chain.arun({"question": input, "summaries": docs})
+    print(f'inference took {timer() - start}')
     return resp
 
 
