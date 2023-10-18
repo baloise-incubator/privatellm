@@ -244,7 +244,7 @@ async def query_db(question: str, username: str):
 
 @app.post("/chat_with_documents/")
 
-async def chat_with_documents(input: str, username: str = Depends(authenticate_user)):
+async def chat_with_documents(input: str, request: Request, username: str = Depends(authenticate_user)):
     template = """Please give a short answer using the context enclosed in <ctx></ctx> adding the source of the document used to respond.
     If the context does not contain the information respond with "texttitan does not want to help".
 
