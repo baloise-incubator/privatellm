@@ -8,6 +8,7 @@ from enum import Enum
 from timeit import default_timer as timer
 import uvicorn
 from fastapi import FastAPI, UploadFile, Depends, HTTPException, Request
+from fastapi.responses import FileResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from langchain.chat_models import ChatOpenAI
 from langchain.docstore.document import Document
@@ -133,7 +134,25 @@ async def update_files(filenames, username):
         logging.info("persisting")
     return db
 
-@app.post("/file/")
+@app.get("/files/{userpath}/{filename}")
+async def get_file(userpath:str, filename: str, username: str = Depends(authenticate_user)):
+    print("filename", userpath, filename, username)
+    # Get the file path and serve it
+    logging.info(filename)
+    if userpath != username:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Forbidden to access /files/{filename}",
+        )
+    file_path = os.path.join("uploads", userpath, filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(
+            status_code=404,
+            detail=f"No such file /files/{filename}",
+        )
+    return FileResponse(file_path)
+
+@app.post("/files/")
 async def upload_files(
     pdf_files: List[UploadFile], username: str = Depends(authenticate_user)
 ):
@@ -245,14 +264,14 @@ async def query_db(question: str, username: str):
 @app.post("/chat_with_documents/")
 
 async def chat_with_documents(input: str, request: Request, username: str = Depends(authenticate_user)):
-    template = """Please give a short answer using the context enclosed in <ctx></ctx> adding the source of the document used to respond.
-    If the context does not contain the information respond with "texttitan does not want to help".
+    template = """Please give a short answer using the context enclosed in <ctx></ctx>.
+    If the context does not contain the information respond with "texttitan cannot help you with that".
 
     <ctx>
     {summaries}
     </ctx>
 
-    question: {question}
+    question: {question}. Always give the source document with the complete file path
 
     answer:"""
 
@@ -277,7 +296,7 @@ async def chat_with_documents(input: str, request: Request, username: str = Depe
     start = timer()
     resp = await llm_chain.arun({"question": input, "summaries": docs})
     print(f'inference took {timer() - start}')
-    return resp.replace(f"uploads/{username}/", f"{request.base_url}/{username}/")
+    return resp.replace(f"uploads/{username}/", f"{request.base_url}files/{username}/")
 
 
 if __name__ == "__main__":
