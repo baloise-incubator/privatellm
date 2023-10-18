@@ -1,3 +1,6 @@
 uploads
 !uploads/.keepme
 apikey.txt
+**/__pycache__
+db
+
