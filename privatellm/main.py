@@ -161,6 +161,28 @@ async def get_file(userpath:str, filename: str, username: str = Depends(authenti
         )
     return FileResponse(file_path)
 
+@app.delete("/files/{userpath}/{filename}")
+async def delete_file(userpath:str, filename: str, username: str = Depends(authenticate_user)):
+    # Get the file path and serve it
+    if userpath != username:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Forbidden to access /files/{userpath}/{filename}",
+        )
+    file_path = os.path.join("files", userpath, filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(
+            status_code=404,
+            detail=f"No such file /files/{userpath}/{filename}",
+        )
+    db = Chroma(persist_directory="./db", collection_name=username)
+    collection = db.get(where={"source": f"files/{userpath}/{filename}"})
+    if collection["ids"]:
+        db._collection.delete(ids=collection["ids"])  # pylint: disable=protected-access
+    os.remove(os.path.join("files", userpath, filename))
+    return ""
+
+
 @app.post("/files/")
 async def upload_files(
     pdf_files: List[UploadFile], username: str = Depends(authenticate_user)
