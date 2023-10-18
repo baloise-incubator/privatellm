@@ -767,6 +767,21 @@ python-versions = ">=3.7"
 typing-extensions = ">=4.6.0,<4.7.0 || >4.7.0"
 
 [[package]]
+name = "pypdf"
+version = "3.16.4"
+description = "A pure-python PDF library capable of splitting, merging, cropping, and transforming PDF files"
+category = "main"
+optional = false
+python-versions = ">=3.6"
+
+[package.extras]
+crypto = ["cryptography", "pycryptodome"]
+dev = ["black", "pip-tools", "pre-commit (<2.18.0)", "pytest-cov", "pytest-socket", "pytest-timeout", "flit", "wheel"]
+docs = ["sphinx", "sphinx-rtd-theme", "myst-parser"]
+full = ["cryptography", "pycryptodome", "Pillow (>=8.0.0)"]
+image = ["Pillow (>=8.0.0)"]
+
+[[package]]
 name = "pypika"
 version = "0.48.9"
 description = "A SQL query builder API for Python"
@@ -1133,7 +1148,7 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.10"
-content-hash = "c9e81a98cecae3e9122a4d1bb82d3cd0009052950f1a4841fd6d115b2428d38d"
+content-hash = "e75a55f45f1fad0ac76de797f803cffcf99eff0fd0a6baa30e19189e828afb72"
 
 [metadata.files]
 aiohttp = []
@@ -1194,6 +1209,7 @@ protobuf = []
 pulsar-client = []
 pydantic = []
 pydantic-core = []
+pypdf = []
 pypika = []
 pyreadline3 = []
 pytest = []

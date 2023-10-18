@@ -1,25 +1,54 @@
-from fastapi import FastAPI, File, UploadFile, Depends, HTTPException
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from typing import List
-import uvicorn
-from langchain.agents.agent_toolkits.openapi import planner
+"""Program to play with langchain"""
+
 import os
 import glob
-from langchain.llms import LlamaCpp, GPT4All
+import logging
+from typing import List
+from enum import Enum
+from timeit import default_timer as timer
+import uvicorn
+from fastapi import FastAPI, UploadFile, Depends, HTTPException
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from langchain.chat_models import ChatOpenAI
+from langchain.docstore.document import Document
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
 from langchain.callbacks.manager import CallbackManager
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
+from langchain.document_loaders import (
+    CSVLoader,
+    PyPDFLoader,
+    TextLoader,
+    UnstructuredHTMLLoader,
+    UnstructuredMarkdownLoader,
+    UnstructuredODTLoader,
+    UnstructuredPowerPointLoader,
+    UnstructuredWordDocumentLoader,
+)
+from langchain.embeddings.openai import OpenAIEmbeddings
+from langchain.llms import LlamaCpp, GPT4All
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
-from langchain.document_loaders import TextLoader
-from langchain.embeddings.openai import OpenAIEmbeddings
-import logging
-from enum import Enum
-from timeit import default_timer as timer
+
 
 os.environ["ANONYMIZED_TELEMETRY"] = "False"
+
+# Map file extensions to document loaders and their arguments
+LOADER_MAPPING = {
+    ".csv": (CSVLoader, {}),
+    # ".docx": (Docx2txtLoader, {}),
+    ".doc": (UnstructuredWordDocumentLoader, {}),
+    ".docx": (UnstructuredWordDocumentLoader, {}),
+    ".html": (UnstructuredHTMLLoader, {}),
+    ".md": (UnstructuredMarkdownLoader, {}),
+    ".odt": (UnstructuredODTLoader, {}),
+    ".pdf": (PyPDFLoader, {}),
+    ".ppt": (UnstructuredPowerPointLoader, {}),
+    ".pptx": (UnstructuredPowerPointLoader, {}),
+    ".txt": (TextLoader, {"encoding": "utf8"}),
+    # Add more mappings for other file extensions and loaders as needed
+}
+
 
 # Configure the logging module
 logging.basicConfig(
@@ -49,11 +78,12 @@ def assert_api_key():
     if api_key is not None:
         return
     if os.path.exists("apikey.txt"):
-        api_key = open("apikey.txt", "r").read().strip()
+        api_key = open("apikey.txt", "r", encoding="utf-8").read().strip()
     if not api_key:
         api_key = os.getenv("OPENAI_API_KEY")
     if api_key:
         os.environ["OPENAI_API_KEY"] = api_key
+    return api_key
 
 
 # Verify user credentials
@@ -73,16 +103,50 @@ def authenticate_user(username: str = Depends(verify_credentials)):
     return username
 
 
-@app.post("/uploadpdf/")
-async def upload_pdfs(
+def load_single_document(file_path: str) -> List[Document]:
+    ext = "." + file_path.rsplit(".", 1)[-1].lower()
+    if ext in LOADER_MAPPING:
+        loader_class, loader_args = LOADER_MAPPING[ext]
+        loader = loader_class(file_path, **loader_args)
+        return loader.load()
+
+    raise ValueError(f"Unsupported file extension '{ext}'")
+
+async def update_files(filenames, username):
+    assert_api_key()
+    embeddings = OpenAIEmbeddings()
+    db = Chroma(persist_directory="./db", embedding_function=embeddings, collection_name=username)
+    for fn in filenames:
+        logging.info("generate embeddings for %s", fn)
+        documents = load_single_document(fn)
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000, chunk_overlap=200
+        )
+        docs = text_splitter.split_documents(documents)
+
+        collection = db.get(where={"source": fn})
+        if collection:
+            # await db.update_document()
+            await db.aadd_documents(docs)
+        else:
+            await db.aadd_documents(docs)
+        logging.info("persisting")
+    return db
+
+@app.post("/file/")
+async def upload_files(
     pdf_files: List[UploadFile], username: str = Depends(authenticate_user)
 ):
     filenames = []
+    dirname = f"uploads/{username}"
+    if not os.path.exists(dirname):
+        os.mkdir(dirname)
     for pdf_file in pdf_files:
-        with open(f"uploads/{pdf_file.filename}", "wb") as f:
+        fn = f"{dirname}/{pdf_file.filename}"
+        with open(fn, "wb") as f:
             f.write(pdf_file.file.read())
-        filenames.append(pdf_file.filename)
-
+        filenames.append(fn)
+    await update_files(filenames, username)
     return {"uploaded_filenames": filenames}
 
 
@@ -146,9 +210,8 @@ async def chat(
 async def populate_db(db, username):
     collection = db.get()
     existing_docs = set([metadata["source"] for metadata in collection["metadatas"]])
-    logging.info(f"existing documents {existing_docs}")
+    logging.info("existing documents %s", existing_docs)
     for fn in glob.glob(f"data/{username}/*.txt"):
-        fake_user = fn.split("/")[1]
         if fn in existing_docs:
             continue
         loader = TextLoader(fn)
@@ -157,14 +220,13 @@ async def populate_db(db, username):
             chunk_size=1000, chunk_overlap=200
         )
         docs = text_splitter.split_documents(documents)
-        logging.info(f"generate embeddings for {fn}")
+        logging.info("generate embeddings for %s", fn)
         await db.aadd_documents(docs)
         logging.info("persisting")
         db.persist()
 
 
 async def load_db(username: str):
-    # Use Llama model for embedding
     start = timer()
     assert_api_key()
     embeddings = OpenAIEmbeddings()
@@ -205,7 +267,7 @@ async def chat_with_documents(input: str, username: str = Depends(authenticate_u
         openai_api_key=api_key,
         model_name="gpt-3.5-turbo",
         temperature=0.75,
-        max_tokens=2000,
+        max_tokens=500,
         top_p=1,
         callback_manager=callback_manager,
         verbose=True,  # Verbose is required to pass to the callback manager
