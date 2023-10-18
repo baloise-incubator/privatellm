@@ -30,6 +30,11 @@ from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.llms import LlamaCpp, GPT4All
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
+import tempfile
+from typing import Optional
 
 
 os.environ["ANONYMIZED_TELEMETRY"] = "False"
@@ -113,26 +118,25 @@ def load_single_document(file_path: str) -> List[Document]:
 
     raise ValueError(f"Unsupported file extension '{ext}'")
 
-async def update_files(filenames, username):
-    assert_api_key()
-    embeddings = OpenAIEmbeddings()
-    db = Chroma(persist_directory="./db", embedding_function=embeddings, collection_name=username)
+async def update_files(filenames, username, source: Optional[str] = None):
     for fn in filenames:
         logging.info("generate embeddings for %s", fn)
         documents = load_single_document(fn)
-        text_splitter = RecursiveCharacterTextSplitter(
+        if source:
+            # overwrite source with actual source
+            for doc in documents:
+                doc.metadata['source'] = source
+        await update_embedding(documents, username)
+
+async def update_embedding(documents: List[Document], username: str) -> None:
+    assert_api_key()
+    embeddings = OpenAIEmbeddings()
+    db = Chroma(persist_directory="./db", embedding_function=embeddings, collection_name=username)
+    text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000, chunk_overlap=200
         )
-        docs = text_splitter.split_documents(documents)
-
-        collection = db.get(where={"source": fn})
-        if collection:
-            # await db.update_document()
-            await db.aadd_documents(docs)
-        else:
-            await db.aadd_documents(docs)
-        logging.info("persisting")
-    return db
+    docs = text_splitter.split_documents(documents)
+    await db.aadd_documents(docs)
 
 @app.get("/files/{userpath}")
 async def get_files(userpath:str, username: str = Depends(authenticate_user)):
@@ -199,6 +203,50 @@ async def upload_files(
     await update_files(filenames, username)
     return {"uploaded_filenames": filenames}
 
+@app.post("/websites/")
+async def ingest_website(
+    url: str, username: str = Depends(authenticate_user)
+):
+    await scrape_website(url, username)
+
+
+async def scrape_website(url, username, depth=1, visited=None):
+    if visited is None:
+        visited = set()
+
+    if url in visited or depth < 0 or len(visited) > 10:
+        return
+
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+
+        # Save content to a temporary file
+        with tempfile.NamedTemporaryFile(delete=True, mode='w', encoding='utf-8', suffix='.html') as tmp:
+            tmp.write(response.text)
+            await update_files([tmp.name], username, url)
+        visited.add(url)
+
+        # If we haven't reached our desired depth, continue recursively
+        if depth > 0:
+            links = get_links_from_url(url)
+            for link in links:
+                absolute_link = urljoin(url, link)
+                scrape_website(absolute_link, username, depth-1, visited)
+    except requests.RequestException as e:
+        print(f"Error fetching URL {url}: {e}")
+
+def get_links_from_url(url):
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.text, 'html.parser')
+        links = [a['href'] for a in soup.find_all('a', href=True)]
+        return links
+    except requests.RequestException as e:
+        print(f"Error fetching URL {url}: {e}")
+        return []
 
 @app.post("/chat/")
 async def chat(
