@@ -7,7 +7,7 @@ from typing import List
 from enum import Enum
 from timeit import default_timer as timer
 import uvicorn
-from fastapi import FastAPI, UploadFile, Depends, HTTPException
+from fastapi import FastAPI, UploadFile, Depends, HTTPException, Request
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from langchain.chat_models import ChatOpenAI
 from langchain.docstore.document import Document
@@ -243,7 +243,7 @@ async def query_db(question: str, username: str):
 
 
 @app.post("/chat_with_documents/")
-async def chat_with_documents(input: str, username: str = Depends(authenticate_user)):
+async def chat_with_documents(input: str, request: Request, username: str = Depends(authenticate_user)):
     template = """Please give a short answer using the context enclosed in <ctx></ctx>.
     If the context does not contain the information respond with "texttitan does not want to help".
 
@@ -277,7 +277,7 @@ async def chat_with_documents(input: str, username: str = Depends(authenticate_u
     start = timer()
     resp = await llm_chain.arun({"question": input, "summaries": docs})
     print(f'inference took {timer() - start}')
-    return resp
+    return resp.replace(f"uploads/{username}/", f"{request.base_url}/{username}/")
 
 
 if __name__ == "__main__":
