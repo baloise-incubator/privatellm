@@ -134,21 +134,30 @@ async def update_files(filenames, username):
         logging.info("persisting")
     return db
 
-@app.get("/files/{userpath}/{filename}")
-async def get_file(userpath:str, filename: str, username: str = Depends(authenticate_user)):
-    print("filename", userpath, filename, username)
+@app.get("/files/{userpath}")
+async def get_files(userpath:str, username: str = Depends(authenticate_user)):
     # Get the file path and serve it
-    logging.info(filename)
     if userpath != username:
         raise HTTPException(
             status_code=403,
-            detail=f"Forbidden to access /files/{filename}",
+            detail=f"Forbidden to access /files/{userpath}",
         )
-    file_path = os.path.join("uploads", userpath, filename)
+    files =  glob.glob(f"files/{userpath}/*")
+    return str(files)
+
+@app.get("/files/{userpath}/{filename}")
+async def get_file(userpath:str, filename: str, username: str = Depends(authenticate_user)):
+    # Get the file path and serve it
+    if userpath != username:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Forbidden to access /files/{userpath}/{filename}",
+        )
+    file_path = os.path.join("files", userpath, filename)
     if not os.path.exists(file_path):
         raise HTTPException(
             status_code=404,
-            detail=f"No such file /files/{filename}",
+            detail=f"No such file /files/{userpath}/{filename}",
         )
     return FileResponse(file_path)
 
@@ -157,7 +166,7 @@ async def upload_files(
     pdf_files: List[UploadFile], username: str = Depends(authenticate_user)
 ):
     filenames = []
-    dirname = f"uploads/{username}"
+    dirname = f"files/{username}"
     if not os.path.exists(dirname):
         os.mkdir(dirname)
     for pdf_file in pdf_files:
@@ -284,9 +293,9 @@ async def chat_with_documents(input: str, request: Request, username: str = Depe
 
     llm = ChatOpenAI(
         openai_api_key=api_key,
-        model_name="gpt-3.5-turbo-16k",
+        model_name="gpt-3.5-turbo",
         temperature=0.75,
-        max_tokens=2000,
+        max_tokens=500,
         top_p=1,
         callback_manager=callback_manager,
         verbose=True,  # Verbose is required to pass to the callback manager
@@ -296,7 +305,7 @@ async def chat_with_documents(input: str, request: Request, username: str = Depe
     start = timer()
     resp = await llm_chain.arun({"question": input, "summaries": docs})
     print(f'inference took {timer() - start}')
-    return resp.replace(f"uploads/{username}/", f"{request.base_url}files/{username}/")
+    return resp.replace(f"files/{username}/", f"{request.base_url}files/{username}/")
 
 
 if __name__ == "__main__":
