@@ -243,8 +243,9 @@ async def query_db(question: str, username: str):
 
 
 @app.post("/chat_with_documents/")
-async def chat_with_documents(input: str, request: Request, username: str = Depends(authenticate_user)):
-    template = """Please give a short answer using the context enclosed in <ctx></ctx>.
+
+async def chat_with_documents(input: str, username: str = Depends(authenticate_user)):
+    template = """Please give a short answer using the context enclosed in <ctx></ctx> adding the source of the document used to respond.
     If the context does not contain the information respond with "texttitan does not want to help".
 
     <ctx>
@@ -256,7 +257,6 @@ async def chat_with_documents(input: str, request: Request, username: str = Depe
     answer:"""
 
     docs = await query_db(input, username)
-    print(docs)
     prompt = PromptTemplate(
         template=template, input_variables=["question", "summaries"]
     )
@@ -265,9 +265,9 @@ async def chat_with_documents(input: str, request: Request, username: str = Depe
 
     llm = ChatOpenAI(
         openai_api_key=api_key,
-        model_name="gpt-3.5-turbo",
+        model_name="gpt-3.5-turbo-16k",
         temperature=0.75,
-        max_tokens=500,
+        max_tokens=2000,
         top_p=1,
         callback_manager=callback_manager,
         verbose=True,  # Verbose is required to pass to the callback manager
