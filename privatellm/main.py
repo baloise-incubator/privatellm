@@ -118,6 +118,7 @@ def load_single_document(file_path: str) -> List[Document]:
 
     raise ValueError(f"Unsupported file extension '{ext}'")
 
+
 async def update_files(filenames, username, source: Optional[str] = None):
     for fn in filenames:
         logging.info("generate embeddings for %s", fn)
@@ -125,32 +126,39 @@ async def update_files(filenames, username, source: Optional[str] = None):
         if source:
             # overwrite source with actual source
             for doc in documents:
-                doc.metadata['source'] = source
+                doc.metadata["source"] = source
         await update_embedding(documents, username)
+
 
 async def update_embedding(documents: List[Document], username: str) -> None:
     assert_api_key()
     embeddings = OpenAIEmbeddings()
-    db = Chroma(persist_directory="./db", embedding_function=embeddings, collection_name=username)
-    text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000, chunk_overlap=200
-        )
+    db = Chroma(
+        persist_directory="./db",
+        embedding_function=embeddings,
+        collection_name=username,
+    )
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     docs = text_splitter.split_documents(documents)
     await db.aadd_documents(docs)
 
+
 @app.get("/files/{userpath}")
-async def get_files(userpath:str, username: str = Depends(authenticate_user)):
+async def get_files(userpath: str, username: str = Depends(authenticate_user)):
     # Get the file path and serve it
     if userpath != username:
         raise HTTPException(
             status_code=403,
             detail=f"Forbidden to access /files/{userpath}",
         )
-    files =  glob.glob(f"files/{userpath}/*")
+    files = glob.glob(f"files/{userpath}/*")
     return str(files)
 
+
 @app.get("/files/{userpath}/{filename}")
-async def get_file(userpath:str, filename: str, username: str = Depends(authenticate_user)):
+async def get_file(
+    userpath: str, filename: str, username: str = Depends(authenticate_user)
+):
     # Get the file path and serve it
     if userpath != username:
         raise HTTPException(
@@ -165,8 +173,11 @@ async def get_file(userpath:str, filename: str, username: str = Depends(authenti
         )
     return FileResponse(file_path)
 
+
 @app.delete("/files/{userpath}/{filename}")
-async def delete_file(userpath:str, filename: str, username: str = Depends(authenticate_user)):
+async def delete_file(
+    userpath: str, filename: str, username: str = Depends(authenticate_user)
+):
     # Get the file path and serve it
     if userpath != username:
         raise HTTPException(
@@ -203,10 +214,9 @@ async def upload_files(
     await update_files(filenames, username)
     return {"uploaded_filenames": filenames}
 
+
 @app.post("/websites/")
-async def ingest_website(
-    url: str, username: str = Depends(authenticate_user)
-):
+async def ingest_website(url: str, username: str = Depends(authenticate_user)):
     await scrape_website(url, username)
 
 
@@ -222,7 +232,9 @@ async def scrape_website(url, username, depth=1, visited=None):
         response.raise_for_status()
 
         # Save content to a temporary file
-        with tempfile.NamedTemporaryFile(delete=True, mode='w', encoding='utf-8', suffix='.html') as tmp:
+        with tempfile.NamedTemporaryFile(
+            delete=True, mode="w", encoding="utf-8", suffix=".html"
+        ) as tmp:
             tmp.write(response.text)
             await update_files([tmp.name], username, url)
         visited.add(url)
@@ -232,21 +244,23 @@ async def scrape_website(url, username, depth=1, visited=None):
             links = get_links_from_url(url)
             for link in links:
                 absolute_link = urljoin(url, link)
-                scrape_website(absolute_link, username, depth-1, visited)
+                scrape_website(absolute_link, username, depth - 1, visited)
     except requests.RequestException as e:
         print(f"Error fetching URL {url}: {e}")
+
 
 def get_links_from_url(url):
     try:
         response = requests.get(url)
         response.raise_for_status()
 
-        soup = BeautifulSoup(response.text, 'html.parser')
-        links = [a['href'] for a in soup.find_all('a', href=True)]
+        soup = BeautifulSoup(response.text, "html.parser")
+        links = [a["href"] for a in soup.find_all("a", href=True)]
         return links
     except requests.RequestException as e:
         print(f"Error fetching URL {url}: {e}")
         return []
+
 
 @app.post("/chat/")
 async def chat(
@@ -328,9 +342,13 @@ async def load_db(username: str):
     start = timer()
     assert_api_key()
     embeddings = OpenAIEmbeddings()
-    db = Chroma(persist_directory="./db", embedding_function=embeddings, collection_name=username)
+    db = Chroma(
+        persist_directory="./db",
+        embedding_function=embeddings,
+        collection_name=username,
+    )
     await populate_db(db, username)
-    print(f'ingestion took {timer() - start}')
+    print(f"ingestion took {timer() - start}")
     return db
 
 
@@ -341,8 +359,9 @@ async def query_db(question: str, username: str):
 
 
 @app.post("/chat_with_documents/")
-
-async def chat_with_documents(input: str, request: Request, username: str = Depends(authenticate_user)):
+async def chat_with_documents(
+    input: str, request: Request, username: str = Depends(authenticate_user)
+):
     template = """Please give a short answer using the context enclosed in <ctx></ctx>.
     If the context does not contain the information respond with "texttitan cannot help you with that".
 
@@ -374,7 +393,7 @@ async def chat_with_documents(input: str, request: Request, username: str = Depe
 
     start = timer()
     resp = await llm_chain.arun({"question": input, "summaries": docs})
-    print(f'inference took {timer() - start}')
+    print(f"inference took {timer() - start}")
     return resp.replace(f"files/{username}/", f"{request.base_url}files/{username}/")
 
 
