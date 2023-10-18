@@ -3,7 +3,7 @@
 import os
 import glob
 import logging
-from typing import List
+from typing import List, Dict, Tuple, Any
 from enum import Enum
 from timeit import default_timer as timer
 import uvicorn
@@ -40,7 +40,7 @@ from typing import Optional
 os.environ["ANONYMIZED_TELEMETRY"] = "False"
 
 # Map file extensions to document loaders and their arguments
-LOADER_MAPPING = {
+LOADER_MAPPING: Dict[str, Tuple[Any, Dict[str, str]]] = {
     ".csv": (CSVLoader, {}),
     # ".docx": (Docx2txtLoader, {}),
     ".doc": (UnstructuredWordDocumentLoader, {}),
@@ -228,7 +228,7 @@ async def scrape_website(url, username, depth=1, visited=None):
         return
 
     try:
-        response = requests.get(url)
+        response = requests.get(url, timeout=3)
         response.raise_for_status()
 
         # Save content to a temporary file
@@ -251,7 +251,7 @@ async def scrape_website(url, username, depth=1, visited=None):
 
 def get_links_from_url(url):
     try:
-        response = requests.get(url)
+        response = requests.get(url, timeout=3)
         response.raise_for_status()
 
         soup = BeautifulSoup(response.text, "html.parser")
@@ -304,10 +304,10 @@ async def chat(
 
             llm = ChatOpenAI(
                 openai_api_key=api_key,
-                model_name="gpt-3.5-turbo",
+                model_name="gpt-3.5-turbo",  # type: ignore[call-arg]
                 temperature=0.75,
                 max_tokens=2000,
-                top_p=1,
+                top_p=1,  # type: ignore[call-arg]
                 callback_manager=callback_manager,
                 verbose=True,  # Verbose is required to pass to the callback manager
             )
@@ -382,10 +382,10 @@ async def chat_with_documents(
 
     llm = ChatOpenAI(
         openai_api_key=api_key,
-        model_name="gpt-3.5-turbo",
+        model_name="gpt-3.5-turbo",  # type: ignore[call-arg]
         temperature=0.75,
         max_tokens=500,
-        top_p=1,
+        top_p=1,  # type: ignore[call-arg]
         callback_manager=callback_manager,
         verbose=True,  # Verbose is required to pass to the callback manager
     )
