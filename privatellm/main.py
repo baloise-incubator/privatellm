@@ -304,6 +304,12 @@ async def chat(
     model_enum: ModelEnum = ModelEnum.LLAMA,
     username: str = Depends(authenticate_user),
 ):
+    """
+    Generates a response by interacting with a language model using the input.
+
+    Args:
+        input (str): The user's input or question.
+    """
     template = """Question: {question}
 
     Answer: Give a short answer."""
@@ -392,6 +398,20 @@ async def chat_with_chinook(
 
 
 async def populate_db(db, username):
+    """
+    Populates a database with documents for a given username.
+
+    Args:
+        db (Database): The target database.
+        username (str): The username indicating the data directory.
+
+    This function populates the database with documents from the 'data/{username}' directory.
+    If a document with the same filename already exists, it is skipped.
+
+    Example:
+    >>> db = Database()
+    >>> await populate_db(db, 'john_doe')
+    """
     collection = db.get()
     existing_docs = set([metadata["source"] for metadata in collection["metadatas"]])
     logging.info("existing documents %s", existing_docs)
@@ -411,6 +431,18 @@ async def populate_db(db, username):
 
 
 async def load_db(username: str):
+    """
+    Loads and populates a database for the given username.
+
+    Args:
+        username (str): The username for database identification.
+
+    Returns:
+        Chroma: The populated database instance.
+
+    Example:
+    >>> loaded_db = await load_db("john_doe")
+    """
     start = timer()
     assert_api_key()
     embeddings = OpenAIEmbeddings()
@@ -434,6 +466,12 @@ async def query_db(question: str, username: str):
 async def chat_with_documents(
     input: str, request: Request, username: str = Depends(authenticate_user)
 ):
+    """
+    Generates a response by interacting with a language model using input and user documents.
+
+    Args:
+        input (str): The user's input or question.
+    """
     template = """Please give a short answer using the context enclosed in <ctx></ctx>.
     If the context does not contain the information respond with "texttitan cannot help you with that".
 
