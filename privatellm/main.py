@@ -82,10 +82,12 @@ class ModelEnum(Enum):
 
 
 class DocumentTypeEnum(Enum):
-    """ Document type """
+    """Document type"""
+
     BILL = "bill"
     REMINDER = "reminder"
     RANDOM = "random"
+
 
 app = FastAPI()
 
@@ -154,7 +156,10 @@ async def update_files(filenames, documenttype, username, source: Optional[str] 
                         "name": {"type": "string"},
                         "Vertragskonto-Nr": {"type": "string"},
                         "Rechnungsbetrag": {"type": "string"},
-                        "Zahlungsart:": {"type": "string", "enum": ["eBill", "Rechnung"]},
+                        "Zahlungsart:": {
+                            "type": "string",
+                            "enum": ["eBill", "Rechnung"],
+                        },
                     },
                     "required": ["name", "Rechnungsbetrag", "Zahlungsart"],
                 }
@@ -162,8 +167,10 @@ async def update_files(filenames, documenttype, username, source: Optional[str] 
                 # Must be an OpenAI model that supports functions
                 llm = ChatOpenAI(temperature=0, model="gpt-3.5-turbo-0613")
 
-                document_transformer = create_metadata_tagger(metadata_schema=schema, llm=llm)
-                documents = document_transformer.transform_documents(documents)
+                document_transformer = create_metadata_tagger(
+                    metadata_schema=schema, llm=llm
+                )
+                documents = list(document_transformer.transform_documents(documents))
 
         await update_embedding(documents, username)
 
@@ -238,7 +245,9 @@ async def delete_file(
 
 @app.post("/files/")
 async def upload_files(
-    pdf_files: List[UploadFile], documenttype: DocumentTypeEnum, username: str = Depends(authenticate_user)
+    pdf_files: List[UploadFile],
+    documenttype: DocumentTypeEnum,
+    username: str = Depends(authenticate_user),
 ):
     filenames = []
     dirname = f"files/{username}"
@@ -463,9 +472,10 @@ async def query_db(question: str, username: str):
     docs = db.similarity_search(question)
     return docs
 
-async def query_db(question: str, username: str, type: DocumentTypeEnum):
+
+async def query_db_with_type(question: str, username: str, type: DocumentTypeEnum):
     db = await load_db(username)
-    docs = db.similarity_search(question, filter={'documenttype': type.name})
+    docs = db.similarity_search(question, filter={"documenttype": type.name})
     return docs
 
 
@@ -513,6 +523,7 @@ async def chat_with_documents(
     print(f"inference took {timer() - start}")
     return resp.replace(f"files/{username}/", f"{request.base_url}files/{username}/")
 
+
 @app.post("/chat_with_agent/")
 async def chat_with_agent(
     input: str, request: Request, username: str = Depends(authenticate_user)
@@ -521,7 +532,7 @@ async def chat_with_agent(
         func=lambda x: get_bills(x, username),
         name="GetBills",
         description="Returns documents of type bill. The input should be the question.",
-        coroutine=lambda x: get_bills(x, username)
+        coroutine=lambda x: get_bills(x, username),
     )
     get_randoms_tool = Tool.from_function(
         func=lambda x: get_randoms(x, username),
@@ -553,7 +564,7 @@ async def chat_with_agent(
         func=lambda x: parsing_llm(x, input),
         name="Responder",
         description="This tool sould always be called as the last tool. The documents have to be retrieved using another tool beforehand. It requires the documents as its input",
-        coroutine=lambda x: parsing_llm(x, input)
+        coroutine=lambda x: parsing_llm(x, input),
     )
     tools = [get_bills_tool, get_randoms_tool, get_reminders_tool, respond_tool]
 
@@ -561,7 +572,7 @@ async def chat_with_agent(
         tools=tools,
         agent_type=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
         llm=llm,
-        verbose=True
+        verbose=True,
     )
 
     start = timer()
@@ -569,14 +580,18 @@ async def chat_with_agent(
     print(f"inference took {timer() - start}")
     return resp.replace(f"files/{username}/", f"{request.base_url}files/{username}/")
 
+
 async def get_bills(input: str, username: str):
-    return await query_db(input, username, DocumentTypeEnum.BILL)
+    return await query_db_with_type(input, username, DocumentTypeEnum.BILL)
+
 
 async def get_randoms(input: str, username: str):
-    return await query_db(input, username, DocumentTypeEnum.RANDOM)
+    return await query_db_with_type(input, username, DocumentTypeEnum.RANDOM)
+
 
 async def get_reminders(input: str, username: str):
-    return await query_db(input, username, DocumentTypeEnum.REMINDER)
+    return await query_db_with_type(input, username, DocumentTypeEnum.REMINDER)
+
 
 async def parsing_llm(input: str, question: str):
     template = """Please give a short answer using the context enclosed in <ctx></ctx>.
@@ -607,6 +622,7 @@ async def parsing_llm(input: str, question: str):
     llm_chain = LLMChain(prompt=prompt, llm=llm)
     resp = await llm_chain.arun({"question": question, "summaries": input})
     return resp
+
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, workers=2)
