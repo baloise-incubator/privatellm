@@ -11,6 +11,7 @@ from fastapi import FastAPI, UploadFile, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from langchain.chat_models import ChatOpenAI
+from langchain.document_transformers.openai_functions import create_metadata_tagger
 from langchain.docstore.document import Document
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
@@ -28,6 +29,7 @@ from langchain.document_loaders import (
 )
 from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.llms import LlamaCpp, GPT4All
+from langchain.schema import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
 import requests
@@ -136,6 +138,24 @@ async def update_files(filenames, documenttype, username, source: Optional[str] 
         if documenttype:
             for doc in documents:
                 doc.metadata["documenttype"] = documenttype.name
+            if documenttype == DocumentTypeEnum.BILL:
+                assert_api_key()
+                schema = {
+                    "properties": {
+                        "name": {"type": "string"},
+                        "Vertragskonto-Nr": {"type": "string"},
+                        "Rechnungsbetrag": {"type": "string"},
+                        "Zahlungsart:": {"type": "string", "enum": ["eBill", "Rechnung"]},
+                    },
+                    "required": ["name", "Rechnungsbetrag", "Zahlungsart"],
+                }
+
+                # Must be an OpenAI model that supports functions
+                llm = ChatOpenAI(temperature=0, model="gpt-3.5-turbo-0613")
+
+                document_transformer = create_metadata_tagger(metadata_schema=schema, llm=llm)
+                documents = document_transformer.transform_documents(documents)
+
         await update_embedding(documents, username)
 
 
