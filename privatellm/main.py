@@ -3,9 +3,11 @@
 import os
 import glob
 import logging
-from typing import List, Dict, Tuple, Any
+from typing import List, Dict, Tuple, Any, Optional
 from enum import Enum
 from timeit import default_timer as timer
+from urllib.parse import urljoin
+import tempfile
 import uvicorn
 from fastapi import FastAPI, UploadFile, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
@@ -21,9 +23,7 @@ from langchain.agents import create_sql_agent
 from langchain.agents.agent_toolkits import SQLDatabaseToolkit
 from langchain.sql_database import SQLDatabase
 from langchain.llms.openai import OpenAI
-from langchain.agents import AgentExecutor
 from langchain.agents.agent_types import AgentType
-from langchain.chat_models import ChatOpenAI
 from langchain.document_loaders import (
     CSVLoader,
     PyPDFLoader,
@@ -36,16 +36,12 @@ from langchain.document_loaders import (
 )
 from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.llms import LlamaCpp, GPT4All
-from langchain.schema import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
+from langchain.agents import initialize_agent
 from langchain.tools import Tool
-from langchain.agents import AgentType, initialize_agent
 import requests
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin
-import tempfile
-from typing import Optional
 
 
 os.environ["ANONYMIZED_TELEMETRY"] = "False"
@@ -76,6 +72,7 @@ logging.basicConfig(
 
 
 class ModelEnum(Enum):
+    """Enum of available models."""
     LLAMA = "llama"
     GPT4ALL = "gpt4all"
     CHATGPT = "chatgpt"
@@ -98,17 +95,19 @@ security = HTTPBasic()
 fake_users_db = {"rrr": "rrr", "ttt": "ttt", "yyy": "yyy"}
 
 
-def assert_api_key():
+def assert_api_key() -> str:
     api_key = os.environ.get("OPENAI_API_KEY", None)
     if api_key is not None:
-        return
+        return api_key
     if os.path.exists("apikey.txt"):
-        api_key = open("apikey.txt", "r", encoding="utf-8").read().strip()
+        with open("apikey.txt", "r", encoding="utf-8") as f:
+            api_key = f.read().strip()
     if not api_key:
         api_key = os.getenv("OPENAI_API_KEY")
     if api_key:
         os.environ["OPENAI_API_KEY"] = api_key
-    return api_key
+        return api_key
+    raise AssertionError('Missing OpenAI API key.')
 
 
 # Verify user credentials
@@ -271,7 +270,7 @@ async def scrape_website(url, username, depth=1, visited=None):
     if visited is None:
         visited = set()
 
-    if url in visited or depth < 0 or len(visited) > 10:
+    if url in visited or depth < 0 or len(visited) > 1000:
         return
 
     try:
@@ -283,7 +282,7 @@ async def scrape_website(url, username, depth=1, visited=None):
             delete=True, mode="w", encoding="utf-8", suffix=".html"
         ) as tmp:
             tmp.write(response.text)
-            await update_files([tmp.name], username, url)
+            await update_files([tmp.name], DocumentTypeEnum.RANDOM, username, url)
         visited.add(url)
 
         # If we haven't reached our desired depth, continue recursively
@@ -424,7 +423,7 @@ async def populate_db(db, username):
     >>> await populate_db(db, 'john_doe')
     """
     collection = db.get()
-    existing_docs = set([metadata["source"] for metadata in collection["metadatas"]])
+    existing_docs = {metadata["source"] for metadata in collection["metadatas"]}
     logging.info("existing documents %s", existing_docs)
     for fn in glob.glob(f"data/{username}/*.txt"):
         if fn in existing_docs:
@@ -600,7 +599,12 @@ async def chat_with_agent(
     )
 
     start = timer()
-    resp = await agent.arun({"input": input + " Just return the observation including its source without interpreting it."})
+    resp = await agent.arun(
+        {
+            "input": input
+            + " Just return the observation including its source without interpreting it."
+        }
+    )
     print(f"inference took {timer() - start}")
     return resp.replace(f"files/{username}/", f"{request.base_url}files/{username}/")
 

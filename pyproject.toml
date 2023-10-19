@@ -25,6 +25,8 @@ pytest = "*"
 black = "^23.9.1"
 mypy = "^1.6.0"
 pylint = "*"
+types-beautifulsoup4 = "*"
+types-requests = "*"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
