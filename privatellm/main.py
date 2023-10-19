@@ -39,6 +39,8 @@ from langchain.llms import LlamaCpp, GPT4All
 from langchain.schema import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
+from langchain.tools import Tool
+from langchain.agents import AgentType, initialize_agent
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
@@ -461,6 +463,11 @@ async def query_db(question: str, username: str):
     docs = db.similarity_search(question)
     return docs
 
+async def query_db(question: str, username: str, type: DocumentTypeEnum):
+    db = await load_db(username)
+    docs = db.similarity_search(question, filter={'documenttype': type.name})
+    return docs
+
 
 @app.post("/chat_with_documents/")
 async def chat_with_documents(
@@ -506,6 +513,100 @@ async def chat_with_documents(
     print(f"inference took {timer() - start}")
     return resp.replace(f"files/{username}/", f"{request.base_url}files/{username}/")
 
+@app.post("/chat_with_agent/")
+async def chat_with_agent(
+    input: str, request: Request, username: str = Depends(authenticate_user)
+):
+    get_bills_tool = Tool.from_function(
+        func=lambda x: get_bills(x, username),
+        name="GetBills",
+        description="Returns documents of type bill. The input should be the question.",
+        coroutine=lambda x: get_bills(x, username)
+    )
+    get_randoms_tool = Tool.from_function(
+        func=lambda x: get_randoms(x, username),
+        name="GetRandom",
+        description="Returns documents of type random. The input should be the question.",
+        coroutine=lambda x: get_randoms(x, username),
+    )
+    get_reminders_tool = Tool.from_function(
+        func=lambda x: get_reminders(x, username),
+        name="GetReminders",
+        description="Returns documents of type reminder. The input should be the question.",
+        coroutine=lambda x: get_reminders(x, username),
+    )
+
+    callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
+    api_key = assert_api_key()
+
+    llm = ChatOpenAI(
+        openai_api_key=api_key,
+        model_name="gpt-3.5-turbo",  # type: ignore[call-arg]
+        temperature=0.75,
+        max_tokens=500,
+        top_p=1,  # type: ignore[call-arg]
+        callback_manager=callback_manager,
+        verbose=True,  # Verbose is required to pass to the callback manager
+    )
+
+    respond_tool = Tool.from_function(
+        func=lambda x: parsing_llm(x, input),
+        name="Responder",
+        description="This tool sould always be called as the last tool. The documents have to be retrieved using another tool beforehand. It requires the documents as its input",
+        coroutine=lambda x: parsing_llm(x, input)
+    )
+    tools = [get_bills_tool, get_randoms_tool, get_reminders_tool, respond_tool]
+
+    agent = initialize_agent(
+        tools=tools,
+        agent_type=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
+        llm=llm,
+        verbose=True
+    )
+
+    start = timer()
+    resp = await agent.arun({"input": input})
+    print(f"inference took {timer() - start}")
+    return resp.replace(f"files/{username}/", f"{request.base_url}files/{username}/")
+
+async def get_bills(input: str, username: str):
+    return await query_db(input, username, DocumentTypeEnum.BILL)
+
+async def get_randoms(input: str, username: str):
+    return await query_db(input, username, DocumentTypeEnum.RANDOM)
+
+async def get_reminders(input: str, username: str):
+    return await query_db(input, username, DocumentTypeEnum.REMINDER)
+
+async def parsing_llm(input: str, question: str):
+    template = """Please give a short answer using the context enclosed in <ctx></ctx>.
+    If the context does not contain the information respond with "texttitan cannot help you with that".
+
+    <ctx>
+    {summaries}
+    </ctx>
+
+    question: {question}. Always give the source document with the complete file path
+
+    answer:"""
+    prompt = PromptTemplate(
+        template=template, input_variables=["question", "summaries"]
+    )
+    callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
+    api_key = assert_api_key()
+
+    llm = ChatOpenAI(
+        openai_api_key=api_key,
+        model_name="gpt-3.5-turbo",  # type: ignore[call-arg]
+        temperature=0.75,
+        max_tokens=2000,
+        top_p=1,  # type: ignore[call-arg]
+        callback_manager=callback_manager,
+        verbose=True,  # Verbose is required to pass to the callback manager
+    )
+    llm_chain = LLMChain(prompt=prompt, llm=llm)
+    resp = await llm_chain.arun({"question": question, "summaries": input})
+    return resp
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, workers=2)
