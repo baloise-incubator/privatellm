@@ -280,7 +280,7 @@ async def scrape_website(url, username, depth=1, visited=None):
             links = get_links_from_url(url)
             for link in links:
                 absolute_link = urljoin(url, link)
-                scrape_website(absolute_link, username, depth - 1, visited)
+                await scrape_website(absolute_link, username, depth - 1, visited)
     except requests.RequestException as e:
         print(f"Error fetching URL {url}: {e}")
 
