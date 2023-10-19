@@ -528,6 +528,30 @@ async def chat_with_documents(
 async def chat_with_agent(
     input: str, request: Request, username: str = Depends(authenticate_user)
 ):
+    """
+    API endpoint for chatting with an agent.
+
+    This endpoint allows a user to chat with a model-agent which can perform various tasks like retrieving bills,
+    random documents, and reminders based on the input query provided by the user. The response from the agent
+    will be an observation including its source, without any interpretation.
+
+    Args:
+        input (str): The input question or prompt provided by the user.
+        request (Request): The incoming request object.
+        username (str, optional): The username of the authenticated user. It is ensured by the `authenticate_user` dependency.
+
+    Returns:
+        str: A response from the agent, where the file paths in the response are replaced with the full URL paths.
+
+    Usage:
+        To use this endpoint, make a POST request to `/chat_with_agent/` with the required parameters.
+
+    Notes:
+        - It uses three tools, `GetBills`, `GetRandom`, and `GetReminders` to fetch relevant documents based on the input query.
+        - The `Responder` tool is used to parse and format the agent's response before sending it back to the user.
+        - This endpoint leverages the ChatOpenAI model (specifically "gpt-3.5-turbo") for inference.
+        - The response time for the endpoint (inference time) will be printed.
+    """
     get_bills_tool = Tool.from_function(
         func=lambda x: get_bills(x, username),
         name="GetBills",
@@ -576,7 +600,7 @@ async def chat_with_agent(
     )
 
     start = timer()
-    resp = await agent.arun({"input": input})
+    resp = await agent.arun({"input": input + " Just return the observation including its source without interpreting it."})
     print(f"inference took {timer() - start}")
     return resp.replace(f"files/{username}/", f"{request.base_url}files/{username}/")
 
