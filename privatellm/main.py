@@ -70,6 +70,12 @@ class ModelEnum(Enum):
     CHATGPT = "chatgpt"
 
 
+class DocumentTypeEnum(Enum):
+    """ Document type """
+    BILL = "bill"
+    REMINDER = "reminder"
+    RANDOM = "random"
+
 app = FastAPI()
 
 # Define basic authentication security object
@@ -119,7 +125,7 @@ def load_single_document(file_path: str) -> List[Document]:
     raise ValueError(f"Unsupported file extension '{ext}'")
 
 
-async def update_files(filenames, username, source: Optional[str] = None):
+async def update_files(filenames, documenttype, username, source: Optional[str] = None):
     for fn in filenames:
         logging.info("generate embeddings for %s", fn)
         documents = load_single_document(fn)
@@ -127,6 +133,9 @@ async def update_files(filenames, username, source: Optional[str] = None):
             # overwrite source with actual source
             for doc in documents:
                 doc.metadata["source"] = source
+        if documenttype:
+            for doc in documents:
+                doc.metadata["documenttype"] = documenttype.name
         await update_embedding(documents, username)
 
 
@@ -200,7 +209,7 @@ async def delete_file(
 
 @app.post("/files/")
 async def upload_files(
-    pdf_files: List[UploadFile], username: str = Depends(authenticate_user)
+    pdf_files: List[UploadFile], documenttype: DocumentTypeEnum, username: str = Depends(authenticate_user)
 ):
     filenames = []
     dirname = f"files/{username}"
@@ -211,7 +220,7 @@ async def upload_files(
         with open(fn, "wb") as f:
             f.write(pdf_file.file.read())
         filenames.append(fn)
-    await update_files(filenames, username)
+    await update_files(filenames, documenttype, username)
     return {"uploaded_filenames": filenames}
 
 
