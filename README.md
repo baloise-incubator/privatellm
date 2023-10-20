@@ -11,6 +11,9 @@ hacked during codecamp 2023.
 # install dependencies
 poetry install
 
+# start postgres vectorstore
+docker compose up -d
+
 # run texttitan
 poetry run python privatellm/main.py
 ```
