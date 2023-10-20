@@ -282,6 +282,7 @@ async def scrape_website(url, username, depth=1, visited=None):
             delete=True, mode="w", encoding="utf-8", suffix=".html"
         ) as tmp:
             tmp.write(response.text)
+            tmp.flush()
             await update_files([tmp.name], DocumentTypeEnum.RANDOM, username, url)
         visited.add(url)
 
