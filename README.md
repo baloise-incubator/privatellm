@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # privateLLM - managing private data for LLM
 
 hacked during codecamp 2023.
@@ -11,6 +10,9 @@ hacked during codecamp 2023.
 ```shell
 # install dependencies
 poetry install
+
+# start postgres vectorstore
+docker compose up -d
 
 # run texttitan
 poetry run python privatellm/main.py

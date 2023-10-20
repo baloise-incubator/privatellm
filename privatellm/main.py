@@ -37,11 +37,12 @@ from langchain.document_loaders import (
 from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.llms import LlamaCpp, GPT4All
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.vectorstores import Chroma
 from langchain.agents import initialize_agent
 from langchain.tools import Tool
 import requests
 from bs4 import BeautifulSoup
+from langchain.vectorstores.pgvector import PGVector
+from sqlalchemy import text, create_engine
 
 
 os.environ["ANONYMIZED_TELEMETRY"] = "False"
@@ -62,6 +63,8 @@ LOADER_MAPPING: Dict[str, Tuple[Any, Dict[str, str]]] = {
     # Add more mappings for other file extensions and loaders as needed
 }
 
+# Postgres connection string
+CONNECTION_STRING = "postgresql+psycopg2://postgres:postgres@localhost:5432/db"
 
 # Configure the logging module
 logging.basicConfig(
@@ -73,6 +76,7 @@ logging.basicConfig(
 
 class ModelEnum(Enum):
     """Enum of available models."""
+
     LLAMA = "llama"
     GPT4ALL = "gpt4all"
     CHATGPT = "chatgpt"
@@ -107,7 +111,7 @@ def assert_api_key() -> str:
     if api_key:
         os.environ["OPENAI_API_KEY"] = api_key
         return api_key
-    raise AssertionError('Missing OpenAI API key.')
+    raise AssertionError("Missing OpenAI API key.")
 
 
 # Verify user credentials
@@ -177,10 +181,10 @@ async def update_files(filenames, documenttype, username, source: Optional[str] 
 async def update_embedding(documents: List[Document], username: str) -> None:
     assert_api_key()
     embeddings = OpenAIEmbeddings()
-    db = Chroma(
-        persist_directory="./db",
+    db = PGVector(
         embedding_function=embeddings,
         collection_name=username,
+        connection_string=CONNECTION_STRING,
     )
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     docs = text_splitter.split_documents(documents)
@@ -234,10 +238,16 @@ async def delete_file(
             status_code=404,
             detail=f"No such file /files/{userpath}/{filename}",
         )
-    db = Chroma(persist_directory="./db", collection_name=username)
-    collection = db.get(where={"source": f"files/{userpath}/{filename}"})
-    if collection["ids"]:
-        db._collection.delete(ids=collection["ids"])  # pylint: disable=protected-access
+    engine = create_engine(CONNECTION_STRING)
+    with engine.connect() as session:
+        session.execute(
+            text(
+                f"""delete from langchain_pg_embedding
+                where cmetadata ->> 'source' = 'files/{userpath}/{filename}'
+                and collection_id  = (select uuid from langchain_pg_collection where name = '{username}');"""
+            )
+        )
+        session.commit()
     os.remove(os.path.join("files", userpath, filename))
     return ""
 
@@ -408,39 +418,6 @@ async def chat_with_chinook(
     return resp.strip()
 
 
-async def populate_db(db, username):
-    """
-    Populates a database with documents for a given username.
-
-    Args:
-        db (Database): The target database.
-        username (str): The username indicating the data directory.
-
-    This function populates the database with documents from the 'data/{username}' directory.
-    If a document with the same filename already exists, it is skipped.
-
-    Example:
-    >>> db = Database()
-    >>> await populate_db(db, 'john_doe')
-    """
-    collection = db.get()
-    existing_docs = {metadata["source"] for metadata in collection["metadatas"]}
-    logging.info("existing documents %s", existing_docs)
-    for fn in glob.glob(f"data/{username}/*.txt"):
-        if fn in existing_docs:
-            continue
-        loader = TextLoader(fn)
-        documents = loader.load()
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000, chunk_overlap=200
-        )
-        docs = text_splitter.split_documents(documents)
-        logging.info("generate embeddings for %s", fn)
-        await db.aadd_documents(docs)
-        logging.info("persisting")
-        db.persist()
-
-
 async def load_db(username: str):
     """
     Loads and populates a database for the given username.
@@ -449,21 +426,18 @@ async def load_db(username: str):
         username (str): The username for database identification.
 
     Returns:
-        Chroma: The populated database instance.
+        PGVector: The populated database instance.
 
     Example:
     >>> loaded_db = await load_db("john_doe")
     """
-    start = timer()
     assert_api_key()
     embeddings = OpenAIEmbeddings()
-    db = Chroma(
-        persist_directory="./db",
+    db = PGVector(
         embedding_function=embeddings,
         collection_name=username,
+        connection_string=CONNECTION_STRING,
     )
-    await populate_db(db, username)
-    print(f"ingestion took {timer() - start}")
     return db
 
 
