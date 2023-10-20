@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y \
 RUN ln -s /usr/bin/python3 /usr/bin/python
 
 COPY pyproject.toml poetry.lock poetry.toml ./
-RUN poetry install
+RUN poetry install --no-dev
 COPY privatellm privatellm
 
 # assemble runtime image
