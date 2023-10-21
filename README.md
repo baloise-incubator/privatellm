@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # privateLLM - managing private data for LLM
 
 hacked during codecamp 2023.
