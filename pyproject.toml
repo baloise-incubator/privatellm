@@ -28,6 +28,7 @@ mypy = "^1.6.0"
 pylint = "*"
 types-beautifulsoup4 = "*"
 types-requests = "*"
+ruff = "^0.1.2"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
@@ -36,3 +37,23 @@ build-backend = "poetry.core.masonry.api"
 [tool.poetry.scripts]
 start = "uvicorn app:app --host 0.0.0.0 --port 8000 --reload"
 format = "black:main"
+
+[tool.ruff.lint]
+select = [
+  # pycodestyle
+  "E",
+  # Pyflakes
+  "F",
+  # pyupgrade
+  "UP",
+  # flake8-bugbear
+  "B",
+  # flake8-simplify
+  "SIM",
+  # isort
+  "I",
+]
+
+[tool.ruff.flake8-bugbear]
+# Allow default arguments like, e.g., `data: List[str] = fastapi.Query(None)`.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query"]

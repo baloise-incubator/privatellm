@@ -1,29 +1,29 @@
 """Program to play with langchain"""
 
-import os
+
 import glob
 import logging
-from typing import List, Dict, Tuple, Any, Optional
+import os
+import tempfile
 from enum import Enum
 from timeit import default_timer as timer
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urljoin
-import tempfile
+
+import requests
 import uvicorn
-from fastapi import FastAPI, UploadFile, Depends, HTTPException, Request
+from bs4 import BeautifulSoup
+from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from langchain.chat_models import ChatOpenAI
-from langchain.document_transformers.openai_functions import create_metadata_tagger
-from langchain.docstore.document import Document
-from langchain.prompts import PromptTemplate
-from langchain.chains import LLMChain
+from langchain.agents import create_sql_agent, initialize_agent
+from langchain.agents.agent_toolkits import SQLDatabaseToolkit
+from langchain.agents.agent_types import AgentType
 from langchain.callbacks.manager import CallbackManager
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
-from langchain.agents import create_sql_agent
-from langchain.agents.agent_toolkits import SQLDatabaseToolkit
-from langchain.sql_database import SQLDatabase
-from langchain.llms.openai import OpenAI
-from langchain.agents.agent_types import AgentType
+from langchain.chains import LLMChain
+from langchain.chat_models import ChatOpenAI
+from langchain.docstore.document import Document
 from langchain.document_loaders import (
     CSVLoader,
     PyPDFLoader,
@@ -34,16 +34,16 @@ from langchain.document_loaders import (
     UnstructuredPowerPointLoader,
     UnstructuredWordDocumentLoader,
 )
+from langchain.document_transformers.openai_functions import create_metadata_tagger
 from langchain.embeddings.openai import OpenAIEmbeddings
-from langchain.llms import LlamaCpp, GPT4All
+from langchain.llms import GPT4All, LlamaCpp
+from langchain.llms.openai import OpenAI
+from langchain.prompts import PromptTemplate
+from langchain.sql_database import SQLDatabase
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.agents import initialize_agent
 from langchain.tools import Tool
-import requests
-from bs4 import BeautifulSoup
 from langchain.vectorstores.pgvector import PGVector
-from sqlalchemy import text, create_engine
-
+from sqlalchemy import create_engine, text
 
 os.environ["ANONYMIZED_TELEMETRY"] = "False"
 
@@ -104,7 +104,7 @@ def assert_api_key() -> str:
     if api_key is not None:
         return api_key
     if os.path.exists("apikey.txt"):
-        with open("apikey.txt", "r", encoding="utf-8") as f:
+        with open("apikey.txt", encoding="utf-8") as f:
             api_key = f.read().strip()
     if not api_key:
         api_key = os.getenv("OPENAI_API_KEY")

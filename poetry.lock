@@ -790,6 +790,14 @@ socks = ["PySocks (>=1.5.6,!=1.5.7)"]
 use_chardet_on_py3 = ["chardet (>=3.0.2,<6)"]
 
 [[package]]
+name = "ruff"
+version = "0.1.2"
+description = "An extremely fast Python linter, written in Rust."
+category = "dev"
+optional = false
+python-versions = ">=3.7"
+
+[[package]]
 name = "six"
 version = "1.16.0"
 description = "Python 2 and 3 compatibility utilities"
@@ -1100,7 +1108,7 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.10"
-content-hash = "f03c6b3b31f228fdee472a6e181e918369cc3dfd038dcd2ab6e540e04df22c55"
+content-hash = "0002667ec940e9a06cb7e49274dac8133ed585e6b8b50756f54de1c19540a5db"
 
 [metadata.files]
 aiohttp = []
@@ -1167,6 +1175,7 @@ pyyaml = []
 rapidfuzz = []
 regex = []
 requests = []
+ruff = []
 six = []
 sniffio = []
 soupsieve = []
