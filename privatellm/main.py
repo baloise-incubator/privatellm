@@ -44,6 +44,16 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.tools import Tool
 from langchain.vectorstores.pgvector import PGVector
 from sqlalchemy import create_engine, text
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.logging import LoggingInstrumentor
+from opentelemetry.instrumentation.psycopg2 import Psycopg2Instrumentor
+from opentelemetry.instrumentation.requests import RequestsInstrumentor
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 
 os.environ["ANONYMIZED_TELEMETRY"] = "False"
 
@@ -66,17 +76,8 @@ LOADER_MAPPING: Dict[str, Tuple[Any, Dict[str, str]]] = {
 # Postgres connection string
 CONNECTION_STRING = "postgresql+psycopg2://postgres:postgres@localhost:5432/db"
 
-# Configure the logging module
-logging.basicConfig(
-    level=logging.DEBUG,  # Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-
-
 class ModelEnum(Enum):
     """Enum of available models."""
-
     LLAMA = "llama"
     GPT4ALL = "gpt4all"
     CHATGPT = "chatgpt"
@@ -84,19 +85,35 @@ class ModelEnum(Enum):
 
 class DocumentTypeEnum(Enum):
     """Document type"""
-
     BILL = "bill"
     REMINDER = "reminder"
     RANDOM = "random"
 
-
 app = FastAPI()
+
 
 # Define basic authentication security object
 security = HTTPBasic()
 
 # Users (for demonstration purposes, replace with your own authentication logic)
 fake_users_db = {"rrr": "rrr", "ttt": "ttt", "yyy": "yyy"}
+
+
+
+# opentelemetry instrumentation
+FastAPIInstrumentor.instrument_app(app)
+Psycopg2Instrumentor().instrument(enable_commenter=True, commenter_options={})
+LoggingInstrumentor().instrument(set_logging_format=True)
+HTTPXClientInstrumentor().instrument()
+RequestsInstrumentor().instrument()
+resource = Resource(attributes={
+    "service.name": "texttitan"
+})
+trace.set_tracer_provider(TracerProvider(resource=resource))
+span_processor = BatchSpanProcessor(
+    OTLPSpanExporter(endpoint="http://localhost:4317", insecure=True)
+)
+trace.get_tracer_provider().add_span_processor(span_processor)
 
 
 def assert_api_key() -> str:
