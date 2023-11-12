@@ -19,7 +19,7 @@ pypdf = "^3.16.4"
 bs4 = "^0.0.1"
 unstructured = "^0.10.24"
 pgvector = "^0.2.3"
-psycopg2-binary = "^2.9.9"
+psycopg2 = "^2.9.9"
 
 [tool.poetry.dev-dependencies]
 pytest = "*"
