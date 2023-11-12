@@ -55,7 +55,6 @@ from opentelemetry.instrumentation.psycopg2 import Psycopg2Instrumentor
 from opentelemetry.instrumentation.requests import RequestsInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 
-os.environ["ANONYMIZED_TELEMETRY"] = "False"
 
 # Map file extensions to document loaders and their arguments
 LOADER_MAPPING: Dict[str, Tuple[Any, Dict[str, str]]] = {
