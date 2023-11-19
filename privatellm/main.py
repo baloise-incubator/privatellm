@@ -7,7 +7,7 @@ import os
 import tempfile
 from enum import Enum
 from timeit import default_timer as timer
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 from urllib.parse import urljoin
 
 import requests
@@ -43,21 +43,20 @@ from langchain.sql_database import SQLDatabase
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.tools import Tool
 from langchain.vectorstores.pgvector import PGVector
-from sqlalchemy import create_engine, text
 from opentelemetry import trace
-from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.instrumentation.logging import LoggingInstrumentor
 from opentelemetry.instrumentation.psycopg2 import Psycopg2Instrumentor
 from opentelemetry.instrumentation.requests import RequestsInstrumentor
-from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
-
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from sqlalchemy import create_engine, text
 
 # Map file extensions to document loaders and their arguments
-LOADER_MAPPING: Dict[str, Tuple[Any, Dict[str, str]]] = {
+LOADER_MAPPING: dict[str, tuple[Any, dict[str, str]]] = {
     ".csv": (CSVLoader, {}),
     # ".docx": (Docx2txtLoader, {}),
     ".doc": (UnstructuredWordDocumentLoader, {}),
@@ -75,8 +74,10 @@ LOADER_MAPPING: Dict[str, Tuple[Any, Dict[str, str]]] = {
 # Postgres connection string
 CONNECTION_STRING = "postgresql+psycopg2://postgres:postgres@localhost:5432/db"
 
+
 class ModelEnum(Enum):
     """Enum of available models."""
+
     LLAMA = "llama"
     GPT4ALL = "gpt4all"
     CHATGPT = "chatgpt"
@@ -84,9 +85,11 @@ class ModelEnum(Enum):
 
 class DocumentTypeEnum(Enum):
     """Document type"""
+
     BILL = "bill"
     REMINDER = "reminder"
     RANDOM = "random"
+
 
 app = FastAPI()
 
@@ -98,20 +101,15 @@ security = HTTPBasic()
 fake_users_db = {"rrr": "rrr", "ttt": "ttt", "yyy": "yyy"}
 
 
-
 # opentelemetry instrumentation
 FastAPIInstrumentor.instrument_app(app)
 Psycopg2Instrumentor().instrument(enable_commenter=True, commenter_options={})
 LoggingInstrumentor().instrument(set_logging_format=True)
 HTTPXClientInstrumentor().instrument()
 RequestsInstrumentor().instrument()
-resource = Resource(attributes={
-    "service.name": "texttitan"
-})
+resource = Resource(attributes={"service.name": "texttitan"})
 trace.set_tracer_provider(TracerProvider(resource=resource))
-span_processor = BatchSpanProcessor(
-    OTLPSpanExporter(endpoint="http://localhost:4317", insecure=True)
-)
+span_processor = BatchSpanProcessor(OTLPSpanExporter(endpoint="http://localhost:4317", insecure=True))
 trace.get_tracer_provider().add_span_processor(span_processor)
 
 
@@ -147,7 +145,7 @@ def authenticate_user(username: str = Depends(verify_credentials)):
     return username
 
 
-def load_single_document(file_path: str) -> List[Document]:
+def load_single_document(file_path: str) -> list[Document]:
     ext = "." + file_path.rsplit(".", 1)[-1].lower()
     if ext in LOADER_MAPPING:
         loader_class, loader_args = LOADER_MAPPING[ext]
@@ -157,7 +155,7 @@ def load_single_document(file_path: str) -> List[Document]:
     raise ValueError(f"Unsupported file extension '{ext}'")
 
 
-async def update_files(filenames, documenttype, username, source: Optional[str] = None):
+async def update_files(filenames, documenttype, username, source: str | None = None):
     for fn in filenames:
         logging.info("generate embeddings for %s", fn)
         documents = load_single_document(fn)
@@ -186,15 +184,13 @@ async def update_files(filenames, documenttype, username, source: Optional[str] 
                 # Must be an OpenAI model that supports functions
                 llm = ChatOpenAI(temperature=0, model="gpt-3.5-turbo-0613")
 
-                document_transformer = create_metadata_tagger(
-                    metadata_schema=schema, llm=llm
-                )
+                document_transformer = create_metadata_tagger(metadata_schema=schema, llm=llm)
                 documents = list(document_transformer.transform_documents(documents))
 
         await update_embedding(documents, username)
 
 
-async def update_embedding(documents: List[Document], username: str) -> None:
+async def update_embedding(documents: list[Document], username: str) -> None:
     assert_api_key()
     embeddings = OpenAIEmbeddings()
     db = PGVector(
@@ -220,9 +216,7 @@ async def get_files(userpath: str, username: str = Depends(authenticate_user)):
 
 
 @app.get("/files/{userpath}/{filename}")
-async def get_file(
-    userpath: str, filename: str, username: str = Depends(authenticate_user)
-):
+async def get_file(userpath: str, filename: str, username: str = Depends(authenticate_user)):
     # Get the file path and serve it
     if userpath != username:
         raise HTTPException(
@@ -239,9 +233,7 @@ async def get_file(
 
 
 @app.delete("/files/{userpath}/{filename}")
-async def delete_file(
-    userpath: str, filename: str, username: str = Depends(authenticate_user)
-):
+async def delete_file(userpath: str, filename: str, username: str = Depends(authenticate_user)):
     # Get the file path and serve it
     if userpath != username:
         raise HTTPException(
@@ -260,7 +252,8 @@ async def delete_file(
             text(
                 f"""delete from langchain_pg_embedding
                 where cmetadata ->> 'source' = 'files/{userpath}/{filename}'
-                and collection_id  = (select uuid from langchain_pg_collection where name = '{username}');"""
+                and collection_id  = 
+                (select uuid from langchain_pg_collection where name = '{username}');"""
             )
         )
         session.commit()
@@ -270,7 +263,7 @@ async def delete_file(
 
 @app.post("/files/")
 async def upload_files(
-    pdf_files: List[UploadFile],
+    pdf_files: list[UploadFile],
     documenttype: DocumentTypeEnum,
     username: str = Depends(authenticate_user),
 ):
@@ -304,9 +297,7 @@ async def scrape_website(url, username, depth=1, visited=None):
         response.raise_for_status()
 
         # Save content to a temporary file
-        with tempfile.NamedTemporaryFile(
-            delete=True, mode="w", encoding="utf-8", suffix=".html"
-        ) as tmp:
+        with tempfile.NamedTemporaryFile(delete=True, mode="w", encoding="utf-8", suffix=".html") as tmp:
             tmp.write(response.text)
             tmp.flush()
             await update_files([tmp.name], DocumentTypeEnum.RANDOM, username, url)
@@ -470,9 +461,7 @@ async def query_db_with_type(question: str, username: str, type: DocumentTypeEnu
 
 
 @app.post("/chat_with_documents/")
-async def chat_with_documents(
-    input: str, request: Request, username: str = Depends(authenticate_user)
-):
+async def chat_with_documents(input: str, request: Request, username: str = Depends(authenticate_user)):
     """
     Generates a response by interacting with a language model using input and user documents.
 
@@ -491,9 +480,7 @@ async def chat_with_documents(
     answer:"""
 
     docs = await query_db(input, username)
-    prompt = PromptTemplate(
-        template=template, input_variables=["question", "summaries"]
-    )
+    prompt = PromptTemplate(template=template, input_variables=["question", "summaries"])
     callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
     api_key = assert_api_key()
 
@@ -515,9 +502,7 @@ async def chat_with_documents(
 
 
 @app.post("/chat_with_agent/")
-async def chat_with_agent(
-    input: str, request: Request, username: str = Depends(authenticate_user)
-):
+async def chat_with_agent(input: str, request: Request, username: str = Depends(authenticate_user)):
     """
     API endpoint for chatting with an agent.
 
@@ -541,7 +526,7 @@ async def chat_with_agent(
         - The `Responder` tool is used to parse and format the agent's response before sending it back to the user.
         - This endpoint leverages the ChatOpenAI model (specifically "gpt-3.5-turbo") for inference.
         - The response time for the endpoint (inference time) will be printed.
-    """
+    """  # noqa: E501
     get_bills_tool = Tool.from_function(
         func=lambda x: get_bills(x, username),
         name="GetBills",
@@ -577,7 +562,8 @@ async def chat_with_agent(
     respond_tool = Tool.from_function(
         func=lambda x: parsing_llm(x, input),
         name="Responder",
-        description="This tool sould always be called as the last tool. The documents have to be retrieved using another tool beforehand. It requires the documents as its input",
+        description="""This tool sould always be called as the last tool.
+The documents have to be retrieved using another tool beforehand. It requires the documents as its input""",
         coroutine=lambda x: parsing_llm(x, input),
     )
     tools = [get_bills_tool, get_randoms_tool, get_reminders_tool, respond_tool]
@@ -591,10 +577,7 @@ async def chat_with_agent(
 
     start = timer()
     resp = await agent.arun(
-        {
-            "input": input
-            + " Just return the observation including its source without interpreting it."
-        }
+        {"input": input + " Just return the observation including its source without interpreting it."}
     )
     print(f"inference took {timer() - start}")
     return resp.replace(f"files/{username}/", f"{request.base_url}files/{username}/")
@@ -623,9 +606,7 @@ async def parsing_llm(input: str, question: str):
     question: {question}. Always give the source document with the complete file path
 
     answer:"""
-    prompt = PromptTemplate(
-        template=template, input_variables=["question", "summaries"]
-    )
+    prompt = PromptTemplate(template=template, input_variables=["question", "summaries"])
     callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
     api_key = assert_api_key()
 
