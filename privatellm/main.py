@@ -1,11 +1,11 @@
 """Program to play with langchain"""
 
-
 import glob
 import logging
 import os
 import tempfile
 from enum import Enum
+from pathlib import Path
 from timeit import default_timer as timer
 from typing import Any
 from urllib.parse import urljoin
@@ -121,11 +121,10 @@ def assert_api_key() -> str:
     api_key = os.environ.get("OPENAI_API_KEY", None)
     if api_key is not None:
         return api_key
-    if os.path.exists("apikey.txt"):
-        with open("apikey.txt", encoding="utf-8") as f:
+    path = Path("apikey.txt")
+    if path.exists():
+        with path.open(encoding="utf-8") as f:
             api_key = f.read().strip()
-    if not api_key:
-        api_key = os.getenv("OPENAI_API_KEY")
     if api_key:
         os.environ["OPENAI_API_KEY"] = api_key
         return api_key
