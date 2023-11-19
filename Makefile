@@ -1,5 +1,6 @@
 init:
 	poetry install
+	pre-commit install
 
 format:
 	poetry run ruff format .
