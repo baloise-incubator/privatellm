@@ -29,12 +29,14 @@ opentelemetry-instrumentation-httpx = "*"
 
 [tool.poetry.dev-dependencies]
 pytest = "*"
+typeguard = "^2.13.3"
 black = "^23.9.1"
 mypy = "^1.6.0"
 pylint = "*"
 types-beautifulsoup4 = "*"
 types-requests = "*"
 ruff = "^0.1.2"
+coverage = "*"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

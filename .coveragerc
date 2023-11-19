@@ -1,0 +1,7 @@
+[run]
+source = privatellm
+
+[report]
+exclude_lines =
+    pragma: no cover
+    @abstractmethod

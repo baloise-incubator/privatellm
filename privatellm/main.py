@@ -92,7 +92,7 @@ class DocumentTypeEnum(Enum):
     RANDOM = "random"
 
 
-app = FastAPI()
+app = FastAPI(title="TextTitan")
 
 
 # Define basic authentication security object
