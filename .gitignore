@@ -3,4 +3,5 @@ files
 apikey.txt
 **/__pycache__
 db
-
+.coverage
+.vscode/
