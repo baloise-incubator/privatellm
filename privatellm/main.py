@@ -34,6 +34,7 @@ from langchain.document_loaders import (
     UnstructuredPowerPointLoader,
     UnstructuredWordDocumentLoader,
 )
+from langchain.document_loaders.unstructured import UnstructuredBaseLoader
 from langchain.document_transformers.openai_functions import create_metadata_tagger
 from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.llms import GPT4All, LlamaCpp
@@ -108,9 +109,10 @@ LoggingInstrumentor().instrument(set_logging_format=True)
 HTTPXClientInstrumentor().instrument()
 RequestsInstrumentor().instrument()
 resource = Resource(attributes={"service.name": "texttitan"})
-trace.set_tracer_provider(TracerProvider(resource=resource))
+provider = TracerProvider(resource=resource)
+trace.set_tracer_provider(provider)
 span_processor = BatchSpanProcessor(OTLPSpanExporter(endpoint="http://localhost:4317", insecure=True))
-trace.get_tracer_provider().add_span_processor(span_processor)
+provider.add_span_processor(span_processor)
 
 
 def assert_api_key() -> str:
@@ -129,7 +131,7 @@ def assert_api_key() -> str:
 
 
 # Verify user credentials
-def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)):
+def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)) -> str:
     user = fake_users_db.get(credentials.username)
     if user is None or user != credentials.password:
         raise HTTPException(
@@ -141,7 +143,7 @@ def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)):
 
 
 # Custom authentication dependency decorator
-def authenticate_user(username: str = Depends(verify_credentials)):
+def authenticate_user(username: str = Depends(verify_credentials)) -> str:
     return username
 
 
@@ -149,13 +151,15 @@ def load_single_document(file_path: str) -> list[Document]:
     ext = "." + file_path.rsplit(".", 1)[-1].lower()
     if ext in LOADER_MAPPING:
         loader_class, loader_args = LOADER_MAPPING[ext]
-        loader = loader_class(file_path, **loader_args)
+        loader: UnstructuredBaseLoader = loader_class(file_path, **loader_args)
         return loader.load()
 
     raise ValueError(f"Unsupported file extension '{ext}'")
 
 
-async def update_files(filenames, documenttype, username, source: str | None = None):
+async def update_files(
+    filenames: list[str], documenttype: DocumentTypeEnum, username: str, source: str | None = None
+) -> None:
     for fn in filenames:
         logging.info("generate embeddings for %s", fn)
         documents = load_single_document(fn)
@@ -204,7 +208,7 @@ async def update_embedding(documents: list[Document], username: str) -> None:
 
 
 @app.get("/files/{userpath}")
-async def get_files(userpath: str, username: str = Depends(authenticate_user)):
+async def get_files(userpath: str, username: str = Depends(authenticate_user)) -> str:
     # Get the file path and serve it
     if userpath != username:
         raise HTTPException(
@@ -216,7 +220,7 @@ async def get_files(userpath: str, username: str = Depends(authenticate_user)):
 
 
 @app.get("/files/{userpath}/{filename}")
-async def get_file(userpath: str, filename: str, username: str = Depends(authenticate_user)):
+async def get_file(userpath: str, filename: str, username: str = Depends(authenticate_user)) -> FileResponse:
     # Get the file path and serve it
     if userpath != username:
         raise HTTPException(
@@ -233,7 +237,7 @@ async def get_file(userpath: str, filename: str, username: str = Depends(authent
 
 
 @app.delete("/files/{userpath}/{filename}")
-async def delete_file(userpath: str, filename: str, username: str = Depends(authenticate_user)):
+async def delete_file(userpath: str, filename: str, username: str = Depends(authenticate_user)) -> str:
     # Get the file path and serve it
     if userpath != username:
         raise HTTPException(
@@ -266,7 +270,7 @@ async def upload_files(
     pdf_files: list[UploadFile],
     documenttype: DocumentTypeEnum,
     username: str = Depends(authenticate_user),
-):
+) -> dict[str, list[str]]:
     filenames = []
     dirname = f"files/{username}"
     if not os.path.exists(dirname):
@@ -281,11 +285,11 @@ async def upload_files(
 
 
 @app.post("/websites/")
-async def ingest_website(url: str, username: str = Depends(authenticate_user)):
+async def ingest_website(url: str, username: str = Depends(authenticate_user)) -> None:
     await scrape_website(url, username)
 
 
-async def scrape_website(url, username, depth=1, visited=None):
+async def scrape_website(url: str, username: str, depth: int = 1, visited: set[str] | None = None) -> None:
     if visited is None:
         visited = set()
 
@@ -313,7 +317,7 @@ async def scrape_website(url, username, depth=1, visited=None):
         print(f"Error fetching URL {url}: {e}")
 
 
-def get_links_from_url(url):
+def get_links_from_url(url: str) -> list[str]:
     try:
         response = requests.get(url, timeout=3)
         response.raise_for_status()
@@ -331,7 +335,7 @@ async def chat(
     input: str,
     model_enum: ModelEnum = ModelEnum.LLAMA,
     username: str = Depends(authenticate_user),
-):
+) -> Any:
     """
     Generates a response by interacting with a language model using the input.
 
@@ -377,7 +381,7 @@ async def chat(
                 model_name="gpt-3.5-turbo",  # type: ignore[call-arg]
                 temperature=0.75,
                 max_tokens=2000,
-                top_p=1,  # type: ignore[call-arg]
+                top_p=1,
                 callback_manager=callback_manager,
                 verbose=True,  # Verbose is required to pass to the callback manager
             )
@@ -392,7 +396,7 @@ async def chat(
 @app.post("/chat_with_chinook/")
 async def chat_with_chinook(
     question: str,
-):
+) -> Any:
     """
     This function processes user questions using a combination of a language model
     and an SQLite database named 'chinook.db'. It generates responses based on the
@@ -425,7 +429,7 @@ async def chat_with_chinook(
     return resp.strip()
 
 
-async def load_db(username: str):
+async def load_db(username: str) -> PGVector:
     """
     Loads and populates a database for the given username.
 
@@ -448,20 +452,20 @@ async def load_db(username: str):
     return db
 
 
-async def query_db(question: str, username: str):
+async def query_db(question: str, username: str) -> list[Document]:
     db = await load_db(username)
     docs = db.similarity_search(question)
     return docs
 
 
-async def query_db_with_type(question: str, username: str, type: DocumentTypeEnum):
+async def query_db_with_type(question: str, username: str, type: DocumentTypeEnum) -> list[Document]:
     db = await load_db(username)
     docs = db.similarity_search(question, filter={"documenttype": type.name})
     return docs
 
 
 @app.post("/chat_with_documents/")
-async def chat_with_documents(input: str, request: Request, username: str = Depends(authenticate_user)):
+async def chat_with_documents(input: str, request: Request, username: str = Depends(authenticate_user)) -> Any:
     """
     Generates a response by interacting with a language model using input and user documents.
 
@@ -489,7 +493,7 @@ async def chat_with_documents(input: str, request: Request, username: str = Depe
         model_name="gpt-3.5-turbo",  # type: ignore[call-arg]
         temperature=0.75,
         max_tokens=500,
-        top_p=1,  # type: ignore[call-arg]
+        top_p=1,
         callback_manager=callback_manager,
         verbose=True,  # Verbose is required to pass to the callback manager
     )
@@ -502,7 +506,7 @@ async def chat_with_documents(input: str, request: Request, username: str = Depe
 
 
 @app.post("/chat_with_agent/")
-async def chat_with_agent(input: str, request: Request, username: str = Depends(authenticate_user)):
+async def chat_with_agent(input: str, request: Request, username: str = Depends(authenticate_user)) -> Any:
     """
     API endpoint for chatting with an agent.
 
@@ -554,7 +558,7 @@ async def chat_with_agent(input: str, request: Request, username: str = Depends(
         model_name="gpt-3.5-turbo",  # type: ignore[call-arg]
         temperature=0.75,
         max_tokens=500,
-        top_p=1,  # type: ignore[call-arg]
+        top_p=1,
         callback_manager=callback_manager,
         verbose=True,  # Verbose is required to pass to the callback manager
     )
@@ -583,19 +587,19 @@ The documents have to be retrieved using another tool beforehand. It requires th
     return resp.replace(f"files/{username}/", f"{request.base_url}files/{username}/")
 
 
-async def get_bills(input: str, username: str):
+async def get_bills(input: str, username: str) -> list[Document]:
     return await query_db_with_type(input, username, DocumentTypeEnum.BILL)
 
 
-async def get_randoms(input: str, username: str):
+async def get_randoms(input: str, username: str) -> list[Document]:
     return await query_db_with_type(input, username, DocumentTypeEnum.RANDOM)
 
 
-async def get_reminders(input: str, username: str):
+async def get_reminders(input: str, username: str) -> list[Document]:
     return await query_db_with_type(input, username, DocumentTypeEnum.REMINDER)
 
 
-async def parsing_llm(input: str, question: str):
+async def parsing_llm(input: str, question: str) -> Any:
     template = """Please give a short answer using the context enclosed in <ctx></ctx>.
     If the context does not contain the information respond with "texttitan cannot help you with that".
 
@@ -615,7 +619,7 @@ async def parsing_llm(input: str, question: str):
         model_name="gpt-3.5-turbo",  # type: ignore[call-arg]
         temperature=0.75,
         max_tokens=2000,
-        top_p=1,  # type: ignore[call-arg]
+        top_p=1,
         callback_manager=callback_manager,
         verbose=True,  # Verbose is required to pass to the callback manager
     )
