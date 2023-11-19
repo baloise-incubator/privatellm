@@ -11,8 +11,9 @@ hacked during codecamp 2023.
 # install dependencies
 poetry install
 
-# start postgres vectorstore
+# start postgres vectorstore and jaeger trace collector
 docker compose up -d
+export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317"
 
 # run texttitan
 poetry run python privatellm/main.py

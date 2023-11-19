@@ -111,8 +111,10 @@ RequestsInstrumentor().instrument()
 resource = Resource(attributes={"service.name": "texttitan"})
 provider = TracerProvider(resource=resource)
 trace.set_tracer_provider(provider)
-span_processor = BatchSpanProcessor(OTLPSpanExporter(endpoint="http://localhost:4317", insecure=True))
-provider.add_span_processor(span_processor)
+endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+if endpoint:
+    span_processor = BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint, insecure=True))
+    provider.add_span_processor(span_processor)
 
 
 def assert_api_key() -> str:
