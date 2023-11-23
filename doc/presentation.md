@@ -14,6 +14,15 @@ Codecamp 2023 - Hannah, Leon, Patrick
 
 ---
 
+## Goal
+
+- LLM hands-on
+- ask questions on documents
+- multiple users
+- personalized set of documents
+
+---
+
 ![TextTitan](texttitan.png)
 
 ---
