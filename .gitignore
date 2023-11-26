@@ -5,3 +5,4 @@ apikey.txt
 db
 .coverage
 .vscode/
+.env

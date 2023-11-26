@@ -13,7 +13,10 @@ poetry install
 
 # start postgres vectorstore and jaeger trace collector
 docker compose up -d
-export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317"
+
+# copy environment template and adjust the settings
+cp .env.template .env
+vi .env
 
 # run texttitan
 poetry run python privatellm/main.py
