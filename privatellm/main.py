@@ -5,7 +5,6 @@ import logging
 import os
 import tempfile
 from enum import Enum
-from timeit import default_timer as timer
 from typing import Any
 from urllib.parse import urljoin
 
@@ -19,6 +18,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from langchain.agents import create_sql_agent, initialize_agent
 from langchain.agents.agent_toolkits import SQLDatabaseToolkit
 from langchain.agents.agent_types import AgentType
+from langchain.callbacks import get_openai_callback
 from langchain.callbacks.manager import CallbackManager
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.chains import LLMChain
@@ -371,8 +371,18 @@ async def chat(
             raise ValueError(f"unsupported model {model_enum}")
     llm_chain = LLMChain(prompt=prompt, llm=llm)
 
-    resp = await llm_chain.arun(input)
-    return resp.strip()
+    tracer = trace.get_tracer(__name__)
+    with get_openai_callback() as cb, tracer.start_as_current_span("chat") as span:
+        resp = await llm_chain.arun(input)
+        span.set_attributes(
+            {
+                "total_tokens": cb.total_tokens,
+                "prompt_tokens": cb.prompt_tokens,
+                "completion_tokens": cb.completion_tokens,
+                "total_cost_usd": cb.total_cost,
+            }
+        )
+        return resp.strip()
 
 
 @app.post("/chat_with_chinook/")
@@ -405,8 +415,18 @@ async def chat_with_chinook(
         agent_type=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
     )
 
-    resp = await agent_executor.arun(question)
-    return resp.strip()
+    tracer = trace.get_tracer(__name__)
+    with get_openai_callback() as cb, tracer.start_as_current_span("chat_with_chinook") as span:
+        resp = await agent_executor.arun(question)
+        span.set_attributes(
+            {
+                "total_tokens": cb.total_tokens,
+                "prompt_tokens": cb.prompt_tokens,
+                "completion_tokens": cb.completion_tokens,
+                "total_cost_usd": cb.total_cost,
+            }
+        )
+        return resp.strip()
 
 
 async def load_db(username: str) -> PGVector:
@@ -470,16 +490,23 @@ async def chat_with_documents(input: str, request: Request, username: str = Depe
         model_name="gpt-3.5-turbo",  # type: ignore[call-arg]
         temperature=0.75,
         max_tokens=500,
-        top_p=1,
         callback_manager=callback_manager,
         verbose=True,  # Verbose is required to pass to the callback manager
     )
     llm_chain = LLMChain(prompt=prompt, llm=llm)
 
-    start = timer()
-    resp = await llm_chain.arun({"question": input, "summaries": docs})
-    print(f"inference took {timer() - start}")
-    return resp.replace(f"files/{username}/", f"{request.base_url}files/{username}/")
+    tracer = trace.get_tracer(__name__)
+    with get_openai_callback() as cb, tracer.start_as_current_span("chat_with_documents") as span:
+        resp = await llm_chain.arun({"question": input, "summaries": docs})
+        span.set_attributes(
+            {
+                "total_tokens": cb.total_tokens,
+                "prompt_tokens": cb.prompt_tokens,
+                "completion_tokens": cb.completion_tokens,
+                "total_cost_usd": cb.total_cost,
+            }
+        )
+        return resp.replace(f"files/{username}/", f"{request.base_url}files/{username}/")
 
 
 @app.post("/chat_with_agent/")
@@ -553,12 +580,20 @@ The documents have to be retrieved using another tool beforehand. It requires th
         verbose=True,
     )
 
-    start = timer()
-    resp = await agent.arun(
-        {"input": input + " Just return the observation including its source without interpreting it."}
-    )
-    print(f"inference took {timer() - start}")
-    return resp.replace(f"files/{username}/", f"{request.base_url}files/{username}/")
+    tracer = trace.get_tracer(__name__)
+    with get_openai_callback() as cb, tracer.start_as_current_span("chat_with_agent") as span:
+        resp = await agent.arun(
+            {"input": input + " Just return the observation including its source without interpreting it."}
+        )
+        span.set_attributes(
+            {
+                "total_tokens": cb.total_tokens,
+                "prompt_tokens": cb.prompt_tokens,
+                "completion_tokens": cb.completion_tokens,
+                "total_cost_usd": cb.total_cost,
+            }
+        )
+        return resp.replace(f"files/{username}/", f"{request.base_url}files/{username}/")
 
 
 async def get_bills(input: str, username: str) -> list[Document]:
