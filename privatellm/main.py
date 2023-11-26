@@ -5,7 +5,6 @@ import logging
 import os
 import tempfile
 from enum import Enum
-from pathlib import Path
 from timeit import default_timer as timer
 from typing import Any
 from urllib.parse import urljoin
@@ -13,6 +12,7 @@ from urllib.parse import urljoin
 import requests
 import uvicorn
 from bs4 import BeautifulSoup
+from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -72,8 +72,10 @@ LOADER_MAPPING: dict[str, tuple[Any, dict[str, str]]] = {
     # Add more mappings for other file extensions and loaders as needed
 }
 
+load_dotenv()  # take environment variables from .env
+
 # Postgres connection string
-CONNECTION_STRING = "postgresql+psycopg2://postgres:postgres@localhost:5432/db"
+CONNECTION_STRING = os.getenv("PGVECTOR_DB", "")
 
 
 class ModelEnum(Enum):
@@ -117,20 +119,6 @@ if endpoint:
     provider.add_span_processor(span_processor)
 
 
-def assert_api_key() -> str:
-    api_key = os.environ.get("OPENAI_API_KEY", None)
-    if api_key is not None:
-        return api_key
-    path = Path("apikey.txt")
-    if path.exists():
-        with path.open(encoding="utf-8") as f:
-            api_key = f.read().strip()
-    if api_key:
-        os.environ["OPENAI_API_KEY"] = api_key
-        return api_key
-    raise AssertionError("Missing OpenAI API key.")
-
-
 # Verify user credentials
 def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)) -> str:
     user = fake_users_db.get(credentials.username)
@@ -172,7 +160,6 @@ async def update_files(
             for doc in documents:
                 doc.metadata["documenttype"] = documenttype.name
             if documenttype == DocumentTypeEnum.BILL:
-                assert_api_key()
                 schema = {
                     "properties": {
                         "name": {"type": "string"},
@@ -196,7 +183,6 @@ async def update_files(
 
 
 async def update_embedding(documents: list[Document], username: str) -> None:
-    assert_api_key()
     embeddings = OpenAIEmbeddings()
     db = PGVector(
         embedding_function=embeddings,
@@ -375,10 +361,7 @@ async def chat(
                 verbose=True,
             )
         case ModelEnum.CHATGPT:
-            api_key = assert_api_key()
-
             llm = ChatOpenAI(
-                openai_api_key=api_key,
                 model_name="gpt-3.5-turbo",  # type: ignore[call-arg]
                 temperature=0.75,
                 max_tokens=2000,
@@ -414,8 +397,6 @@ async def chat_with_chinook(
         - give me the most important kpi values for each customer
         - give me the lexically first 3 names by country using a window function for the country
     """
-    assert_api_key()
-
     # downloaded from https://www.sqlitetutorial.net/wp-content/uploads/2018/03/chinook.zip
     db = SQLDatabase.from_uri("sqlite:///db/chinook.db")
     toolkit = SQLDatabaseToolkit(db=db, llm=OpenAI(temperature=0))
@@ -443,7 +424,6 @@ async def load_db(username: str) -> PGVector:
     Example:
     >>> loaded_db = await load_db("john_doe")
     """
-    assert_api_key()
     embeddings = OpenAIEmbeddings()
     db = PGVector(
         embedding_function=embeddings,
@@ -487,10 +467,8 @@ async def chat_with_documents(input: str, request: Request, username: str = Depe
     docs = await query_db(input, username)
     prompt = PromptTemplate(template=template, input_variables=["question", "summaries"])
     callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
-    api_key = assert_api_key()
 
     llm = ChatOpenAI(
-        openai_api_key=api_key,
         model_name="gpt-3.5-turbo",  # type: ignore[call-arg]
         temperature=0.75,
         max_tokens=500,
@@ -552,10 +530,8 @@ async def chat_with_agent(input: str, request: Request, username: str = Depends(
     )
 
     callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
-    api_key = assert_api_key()
 
     llm = ChatOpenAI(
-        openai_api_key=api_key,
         model_name="gpt-3.5-turbo",  # type: ignore[call-arg]
         temperature=0.75,
         max_tokens=500,
@@ -613,10 +589,8 @@ async def parsing_llm(input: str, question: str) -> Any:
     answer:"""
     prompt = PromptTemplate(template=template, input_variables=["question", "summaries"])
     callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
-    api_key = assert_api_key()
 
     llm = ChatOpenAI(
-        openai_api_key=api_key,
         model_name="gpt-3.5-turbo",  # type: ignore[call-arg]
         temperature=0.75,
         max_tokens=2000,
