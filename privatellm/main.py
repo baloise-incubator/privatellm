@@ -344,7 +344,6 @@ async def chat(
                 model_path="llama-2-7b-chat/ggml-model-f16.gguf",
                 temperature=0.75,
                 max_tokens=2000,
-                top_p=1,
                 callback_manager=callback_manager,
                 verbose=True,  # Verbose is required to pass to the callback manager
             )
@@ -365,7 +364,6 @@ async def chat(
                 model_name="gpt-3.5-turbo",  # type: ignore[call-arg]
                 temperature=0.75,
                 max_tokens=2000,
-                top_p=1,
                 callback_manager=callback_manager,
                 verbose=True,  # Verbose is required to pass to the callback manager
             )
@@ -535,7 +533,6 @@ async def chat_with_agent(input: str, request: Request, username: str = Depends(
         model_name="gpt-3.5-turbo",  # type: ignore[call-arg]
         temperature=0.75,
         max_tokens=500,
-        top_p=1,
         callback_manager=callback_manager,
         verbose=True,  # Verbose is required to pass to the callback manager
     )
@@ -594,7 +591,6 @@ async def parsing_llm(input: str, question: str) -> Any:
         model_name="gpt-3.5-turbo",  # type: ignore[call-arg]
         temperature=0.75,
         max_tokens=2000,
-        top_p=1,
         callback_manager=callback_manager,
         verbose=True,  # Verbose is required to pass to the callback manager
     )
