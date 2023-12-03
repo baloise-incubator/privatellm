@@ -1,13 +1,14 @@
 """Program to play with langchain"""
 
-import glob
 import logging
 import os
 import tempfile
 from enum import Enum
-from typing import Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urljoin
 
+import httpx
 import requests
 import uvicorn
 from bs4 import BeautifulSoup
@@ -34,7 +35,9 @@ from langchain.document_loaders import (
     UnstructuredPowerPointLoader,
     UnstructuredWordDocumentLoader,
 )
-from langchain.document_loaders.unstructured import UnstructuredBaseLoader
+
+if TYPE_CHECKING:
+    from langchain.document_loaders.unstructured import UnstructuredBaseLoader
 from langchain.document_transformers.openai_functions import create_metadata_tagger
 from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.llms import GPT4All, LlamaCpp
@@ -136,8 +139,8 @@ def authenticate_user(username: str = Depends(verify_credentials)) -> str:
     return username
 
 
-def load_single_document(file_path: str) -> list[Document]:
-    ext = "." + file_path.rsplit(".", 1)[-1].lower()
+def load_single_document(file_path: Path) -> list[Document]:
+    ext = file_path.suffix.lower()
     if ext in LOADER_MAPPING:
         loader_class, loader_args = LOADER_MAPPING[ext]
         loader: UnstructuredBaseLoader = loader_class(file_path, **loader_args)
@@ -147,7 +150,7 @@ def load_single_document(file_path: str) -> list[Document]:
 
 
 async def update_files(
-    filenames: list[str], documenttype: DocumentTypeEnum, username: str, source: str | None = None
+    filenames: list[Path], documenttype: DocumentTypeEnum, username: str, source: str | None = None
 ) -> None:
     for fn in filenames:
         logging.info("generate embeddings for %s", fn)
@@ -202,7 +205,7 @@ async def get_files(userpath: str, username: str = Depends(authenticate_user)) -
             status_code=403,
             detail=f"Forbidden to access /files/{userpath}",
         )
-    files = glob.glob(f"files/{userpath}/*")
+    files = Path(f"files/{userpath}/").glob("*")
     return str(files)
 
 
@@ -214,8 +217,8 @@ async def get_file(userpath: str, filename: str, username: str = Depends(authent
             status_code=403,
             detail=f"Forbidden to access /files/{userpath}/{filename}",
         )
-    file_path = os.path.join("files", userpath, filename)
-    if not os.path.exists(file_path):
+    file_path = Path("files") / userpath / filename
+    if not file_path.exists():
         raise HTTPException(
             status_code=404,
             detail=f"No such file /files/{userpath}/{filename}",
@@ -231,8 +234,8 @@ async def delete_file(userpath: str, filename: str, username: str = Depends(auth
             status_code=403,
             detail=f"Forbidden to access /files/{userpath}/{filename}",
         )
-    file_path = os.path.join("files", userpath, filename)
-    if not os.path.exists(file_path):
+    file_path = Path("files") / userpath / filename
+    if not file_path.exists():
         raise HTTPException(
             status_code=404,
             detail=f"No such file /files/{userpath}/{filename}",
@@ -241,14 +244,14 @@ async def delete_file(userpath: str, filename: str, username: str = Depends(auth
     with engine.connect() as session:
         session.execute(
             text(
-                f"""delete from langchain_pg_embedding
-                where cmetadata ->> 'source' = 'files/{userpath}/{filename}'
-                and collection_id  = 
-                (select uuid from langchain_pg_collection where name = '{username}');"""
-            )
+                """delete from langchain_pg_embedding
+                where cmetadata ->> 'source' = ':path'
+                and collection_id  =
+                (select uuid from langchain_pg_collection where name = ':username');"""
+            ).bindparams(path=str(file_path), username=username)
         )
         session.commit()
-    os.remove(os.path.join("files", userpath, filename))
+    file_path.unlink(missing_ok=True)
     return ""
 
 
@@ -257,14 +260,14 @@ async def upload_files(
     pdf_files: list[UploadFile],
     documenttype: DocumentTypeEnum,
     username: str = Depends(authenticate_user),
-) -> dict[str, list[str]]:
+) -> dict[str, list[Path]]:
     filenames = []
-    dirname = f"files/{username}"
-    if not os.path.exists(dirname):
-        os.mkdir(dirname)
+    dirname = Path("files") / username
+    if not dirname.exists():
+        dirname.mkdir()
     for pdf_file in pdf_files:
-        fn = f"{dirname}/{pdf_file.filename}"
-        with open(fn, "wb") as f:
+        fn = dirname / cast(str, pdf_file.filename)
+        with fn.open("wb") as f:
             f.write(pdf_file.file.read())
         filenames.append(fn)
     await update_files(filenames, documenttype, username)
@@ -280,18 +283,19 @@ async def scrape_website(url: str, username: str, depth: int = 1, visited: set[s
     if visited is None:
         visited = set()
 
-    if url in visited or depth < 0 or len(visited) > 1000:
+    if url in visited or depth < 0 or len(visited) > 1000:  # noqa: PLR2004
         return
 
     try:
-        response = requests.get(url, timeout=3)
-        response.raise_for_status()
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, timeout=3)
+            response.raise_for_status()
 
         # Save content to a temporary file
         with tempfile.NamedTemporaryFile(delete=True, mode="w", encoding="utf-8", suffix=".html") as tmp:
             tmp.write(response.text)
             tmp.flush()
-            await update_files([tmp.name], DocumentTypeEnum.RANDOM, username, url)
+            await update_files([Path(tmp.name)], DocumentTypeEnum.RANDOM, username, url)
         visited.add(url)
 
         # If we haven't reached our desired depth, continue recursively
@@ -300,8 +304,8 @@ async def scrape_website(url: str, username: str, depth: int = 1, visited: set[s
             for link in links:
                 absolute_link = urljoin(url, link)
                 await scrape_website(absolute_link, username, depth - 1, visited)
-    except requests.RequestException as e:
-        print(f"Error fetching URL {url}: {e}")
+    except requests.RequestException:
+        logging.exception("Error fetching URL %s", url)
 
 
 def get_links_from_url(url: str) -> list[str]:
@@ -310,24 +314,19 @@ def get_links_from_url(url: str) -> list[str]:
         response.raise_for_status()
 
         soup = BeautifulSoup(response.text, "html.parser")
-        links = [a["href"] for a in soup.find_all("a", href=True)]
-        return links
-    except requests.RequestException as e:
-        print(f"Error fetching URL {url}: {e}")
+        return [a["href"] for a in soup.find_all("a", href=True)]
+    except requests.RequestException:
+        logging.exception("Error fetching URL %s", url)
         return []
 
 
 @app.post("/chat/")
-async def chat(
-    input: str,
-    model_enum: ModelEnum = ModelEnum.LLAMA,
-    username: str = Depends(authenticate_user),
-) -> Any:
+async def chat(query: str, model_enum: ModelEnum = ModelEnum.LLAMA) -> Any:
     """
-    Generates a response by interacting with a language model using the input.
+    Generates a response by interacting with a language model using the query.
 
     Args:
-        input (str): The user's input or question.
+        query (str): The user's query or question.
     """
     template = """Question: {question}
 
@@ -373,7 +372,7 @@ async def chat(
 
     tracer = trace.get_tracer(__name__)
     with get_openai_callback() as cb, tracer.start_as_current_span("chat") as span:
-        resp = await llm_chain.arun(input)
+        resp = await llm_chain.arun(query)
         span.set_attributes(
             {
                 "total_tokens": cb.total_tokens,
@@ -443,33 +442,30 @@ async def load_db(username: str) -> PGVector:
     >>> loaded_db = await load_db("john_doe")
     """
     embeddings = OpenAIEmbeddings()
-    db = PGVector(
+    return PGVector(
         embedding_function=embeddings,
         collection_name=username,
         connection_string=CONNECTION_STRING,
     )
-    return db
 
 
 async def query_db(question: str, username: str) -> list[Document]:
     db = await load_db(username)
-    docs = db.similarity_search(question)
-    return docs
+    return db.similarity_search(question)
 
 
-async def query_db_with_type(question: str, username: str, type: DocumentTypeEnum) -> list[Document]:
+async def query_db_with_type(question: str, username: str, doctype: DocumentTypeEnum) -> list[Document]:
     db = await load_db(username)
-    docs = db.similarity_search(question, filter={"documenttype": type.name})
-    return docs
+    return db.similarity_search(question, filter={"documenttype": doctype.name})
 
 
 @app.post("/chat_with_documents/")
-async def chat_with_documents(input: str, request: Request, username: str = Depends(authenticate_user)) -> Any:
+async def chat_with_documents(query: str, request: Request, username: str = Depends(authenticate_user)) -> Any:
     """
-    Generates a response by interacting with a language model using input and user documents.
+    Generates a response by interacting with a language model using query and user documents.
 
     Args:
-        input (str): The user's input or question.
+        query (str): The user's query or question.
     """
     template = """Please give a short answer using the context enclosed in <ctx></ctx>.
     If the context does not contain the information respond with "texttitan cannot help you with that".
@@ -482,7 +478,7 @@ async def chat_with_documents(input: str, request: Request, username: str = Depe
 
     answer:"""
 
-    docs = await query_db(input, username)
+    docs = await query_db(query, username)
     prompt = PromptTemplate(template=template, input_variables=["question", "summaries"])
     callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
 
@@ -497,7 +493,7 @@ async def chat_with_documents(input: str, request: Request, username: str = Depe
 
     tracer = trace.get_tracer(__name__)
     with get_openai_callback() as cb, tracer.start_as_current_span("chat_with_documents") as span:
-        resp = await llm_chain.arun({"question": input, "summaries": docs})
+        resp = await llm_chain.arun({"question": query, "summaries": docs})
         span.set_attributes(
             {
                 "total_tokens": cb.total_tokens,
@@ -510,16 +506,16 @@ async def chat_with_documents(input: str, request: Request, username: str = Depe
 
 
 @app.post("/chat_with_agent/")
-async def chat_with_agent(input: str, request: Request, username: str = Depends(authenticate_user)) -> Any:
+async def chat_with_agent(query: str, request: Request, username: str = Depends(authenticate_user)) -> Any:
     """
     API endpoint for chatting with an agent.
 
     This endpoint allows a user to chat with a model-agent which can perform various tasks like retrieving bills,
-    random documents, and reminders based on the input query provided by the user. The response from the agent
+    random documents, and reminders based on the query provided by the user. The response from the agent
     will be an observation including its source, without any interpretation.
 
     Args:
-        input (str): The input question or prompt provided by the user.
+        query (str): The query or prompt provided by the user.
         request (Request): The incoming request object.
         username (str, optional): The username of the authenticated user. It is ensured by the `authenticate_user` dependency.
 
@@ -565,11 +561,11 @@ async def chat_with_agent(input: str, request: Request, username: str = Depends(
     )
 
     respond_tool = Tool.from_function(
-        func=lambda x: parsing_llm(x, input),
+        func=lambda x: parsing_llm(x, query),
         name="Responder",
         description="""This tool sould always be called as the last tool.
 The documents have to be retrieved using another tool beforehand. It requires the documents as its input""",
-        coroutine=lambda x: parsing_llm(x, input),
+        coroutine=lambda x: parsing_llm(x, query),
     )
     tools = [get_bills_tool, get_randoms_tool, get_reminders_tool, respond_tool]
 
@@ -583,7 +579,7 @@ The documents have to be retrieved using another tool beforehand. It requires th
     tracer = trace.get_tracer(__name__)
     with get_openai_callback() as cb, tracer.start_as_current_span("chat_with_agent") as span:
         resp = await agent.arun(
-            {"input": input + " Just return the observation including its source without interpreting it."}
+            {"query": query + " Just return the observation including its source without interpreting it."}
         )
         span.set_attributes(
             {
@@ -596,19 +592,19 @@ The documents have to be retrieved using another tool beforehand. It requires th
         return resp.replace(f"files/{username}/", f"{request.base_url}files/{username}/")
 
 
-async def get_bills(input: str, username: str) -> list[Document]:
-    return await query_db_with_type(input, username, DocumentTypeEnum.BILL)
+async def get_bills(query: str, username: str) -> list[Document]:
+    return await query_db_with_type(query, username, DocumentTypeEnum.BILL)
 
 
-async def get_randoms(input: str, username: str) -> list[Document]:
-    return await query_db_with_type(input, username, DocumentTypeEnum.RANDOM)
+async def get_randoms(query: str, username: str) -> list[Document]:
+    return await query_db_with_type(query, username, DocumentTypeEnum.RANDOM)
 
 
-async def get_reminders(input: str, username: str) -> list[Document]:
-    return await query_db_with_type(input, username, DocumentTypeEnum.REMINDER)
+async def get_reminders(query: str, username: str) -> list[Document]:
+    return await query_db_with_type(query, username, DocumentTypeEnum.REMINDER)
 
 
-async def parsing_llm(input: str, question: str) -> Any:
+async def parsing_llm(query: str, question: str) -> Any:
     template = """Please give a short answer using the context enclosed in <ctx></ctx>.
     If the context does not contain the information respond with "texttitan cannot help you with that".
 
@@ -630,9 +626,8 @@ async def parsing_llm(input: str, question: str) -> Any:
         verbose=True,  # Verbose is required to pass to the callback manager
     )
     llm_chain = LLMChain(prompt=prompt, llm=llm)
-    resp = await llm_chain.arun({"question": question, "summaries": input})
-    return resp
+    return await llm_chain.arun({"question": question, "summaries": query})
 
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, workers=2)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, workers=2)  # noqa: S104
