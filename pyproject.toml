@@ -26,7 +26,9 @@ opentelemetry-instrumentation-requests = "*"
 opentelemetry-instrumentation-psycopg2 = "*"
 opentelemetry-instrumentation-logging = "*"
 opentelemetry-instrumentation-httpx = "*"
+opentelemetry-instrumentation-aiohttp-client = "*"
 python-dotenv = "^1.0.0"
+miniopy-async = "*"
 
 [tool.poetry.dev-dependencies]
 pytest = "*"
