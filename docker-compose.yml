@@ -14,11 +14,27 @@ services:
       - db:/var/lib/postgresql/data
   jaeger:
     image: jaegertracing/all-in-one:1.51
+    restart: always
     ports:
       - "16686:16686"
       - "4317:4317"
     environment:
       - LOG_LEVEL=debug
+  minio:
+    image: quay.io/minio/minio:RELEASE.2023-11-11T08-14-41Z
+    restart: always
+    ports:
+      - "9000:9000"
+      - "9090:9090"
+    command: server /data --console-address ":9090"
+    environment:
+      - "MINIO_ROOT_USER=root"
+      - "MINIO_ROOT_PASSWORD=password"
+    volumes:
+      - minio:/data
+
 volumes:
   db:
+    driver: local
+  minio:
     driver: local
